@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { promptItems, projects, scriptEpisodes } from "@/lib/db/schema";
 import { requireProjectMember, AuthError, toErrorResponse } from "@/lib/auth-helpers";
@@ -36,7 +36,16 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     const spec = await db.query.projects.findFirst({ where: eq(projects.id, item.projectId) });
-    await db.update(promptItems).set({ state: "generating", updatedAt: new Date() }).where(eq(promptItems.id, id));
+
+    // 并发守卫：已在生成中则拒绝（允许 done/failed → 重新生成）
+    const claimed = await db
+      .update(promptItems)
+      .set({ state: "generating", updatedAt: new Date() })
+      .where(and(eq(promptItems.id, id), ne(promptItems.state, "generating")))
+      .returning({ id: promptItems.id });
+    if (claimed.length === 0) {
+      return Response.json({ error: "该条正在生成中，请勿重复点击" }, { status: 409 });
+    }
 
     try {
       const { promptText, credits, usage } = await generateItemPrompt({

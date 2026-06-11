@@ -203,6 +203,45 @@ export const promptItems = pgTable(
   (t) => [index("prompt_item_idx").on(t.projectId, t.workspace, t.episodeNo)]
 );
 
+// ===== 分镜表（shotlist，一等公民）：静帧/视频提示词都从 shot 行上生成 =====
+export type ShotPromptState = "empty" | "generating" | "done" | "failed";
+
+export const shots = pgTable(
+  "shots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    scriptId: uuid("script_id")
+      .notNull()
+      .references(() => scripts.id),
+    episodeNo: integer("episode_no").notNull(),
+    shotNo: integer("shot_no").notNull(), // 镜号（排序）
+    sceneLabel: text("scene_label").notNull().default(""), // 场（如 3-1 破庙外·黄昏）
+    summary: text("summary").notNull().default(""), // 画面/动作摘要
+    shotType: text("shot_type").notNull().default(""), // 景别
+    cameraMove: text("camera_move").notNull().default(""), // 运镜
+    dialogue: text("dialogue").notNull().default(""), // 台词/声音
+    durationSec: integer("duration_sec"), // 预估时长（秒）
+    assetRefs: jsonb("asset_refs"), // ["@木兰","@横刀"] 关联资产名
+    needStill: boolean("need_still").notNull().default(true), // 静帧取舍（B 级可关，skill 分级规则）
+    stillPrompt: text("still_prompt"),
+    stillState: text("still_state").$type<ShotPromptState>().notNull().default("empty"),
+    stillError: text("still_error"),
+    videoPrompt: text("video_prompt"),
+    videoState: text("video_state").$type<ShotPromptState>().notNull().default("empty"),
+    videoError: text("video_error"),
+    params: jsonb("params"), // {stillCredits, videoCredits, usage...}
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("shot_scope_idx").on(t.projectId, t.scriptId, t.episodeNo, t.shotNo)]
+);
+
 // ===== P1 资产墙（按 §5 一次建全）=====
 export type AssetKind = "人物" | "服装" | "道具" | "场景" | "群演" | "静帧" | "视频";
 

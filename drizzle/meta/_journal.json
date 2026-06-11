@@ -29,6 +29,20 @@
       "when": 1781180437126,
       "tag": "0003_late_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781181292056,
+      "tag": "0004_famous_anthem",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781183028049,
+      "tag": "0005_cultured_tigra",
+      "breakpoints": true
     }
   ]
 }

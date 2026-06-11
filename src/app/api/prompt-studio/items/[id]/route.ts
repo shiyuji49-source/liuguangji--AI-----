@@ -3,13 +3,16 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { promptItems } from "@/lib/db/schema";
 import { requireProjectMember, AuthError, toErrorResponse } from "@/lib/auth-helpers";
+import { assertWorkspaceAccess } from "@/lib/prompt-studio/access";
+import type { Workspace } from "@/lib/prompt-studio/run";
 
 type Params = { params: Promise<{ id: string }> };
 
 async function loadItem(id: string) {
   const item = await db.query.promptItems.findFirst({ where: eq(promptItems.id, id) });
   if (!item) throw new AuthError("条目不存在", 404);
-  await requireProjectMember(item.projectId);
+  const { projectRole } = await requireProjectMember(item.projectId);
+  assertWorkspaceAccess(projectRole, item.workspace as Workspace);
   return item;
 }
 

@@ -79,3 +79,13 @@ export function promptModesFor(role: ProjectRole): PromptMode[] {
   if (role === "storyboard") return ["静帧", "视频"];
   return [];
 }
+
+/** 四阶段流水线：资产 → 分镜表 → 静帧 → 视频（分镜表/静帧/视频同属分镜师工作面） */
+export type PromptStage = "资产" | "分镜表" | "静帧" | "视频";
+
+export function promptStagesFor(role: ProjectRole): PromptStage[] {
+  if (role === "director") return ["资产", "分镜表", "静帧", "视频"];
+  if (role === "artist") return ["资产"];
+  if (role === "storyboard") return ["分镜表", "静帧", "视频"];
+  return [];
+}

@@ -1,0 +1,22 @@
+export type Shot = {
+  id: string;
+  projectId: string;
+  scriptId: string;
+  episodeNo: number;
+  shotNo: number;
+  sceneLabel: string;
+  summary: string;
+  shotType: string;
+  cameraMove: string;
+  dialogue: string;
+  durationSec: number | null;
+  assetRefs: string[] | null;
+  needStill: boolean;
+  stillPrompt: string | null;
+  stillState: "empty" | "generating" | "done" | "failed";
+  stillError: string | null;
+  videoPrompt: string | null;
+  videoState: "empty" | "generating" | "done" | "failed";
+  videoError: string | null;
+  params: { stillCredits?: number; videoCredits?: number } | null;
+};
