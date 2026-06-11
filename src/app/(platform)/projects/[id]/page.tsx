@@ -10,7 +10,7 @@ import { PROJECT_ROLE_LABELS } from "@/lib/labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MembersPanel } from "./members-panel";
-import { ProjectSpecCard, SpecBadges } from "./project-spec-card";
+import { ProjectSpecCard } from "./project-spec-card";
 import { ProjectScripts } from "./project-scripts";
 
 const APP_ICONS = {
@@ -56,15 +56,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg">{project.name}</h1>
-        <SpecBadges spec={spec} />
-        <span className="text-xs text-muted-foreground">
-          我的角色：{PROJECT_ROLE_LABELS[projectRole]}
-        </span>
-      </div>
-
-      <ProjectSpecCard projectId={project.id} spec={spec} canEdit={isDirector} />
+      <ProjectSpecCard
+        projectId={project.id}
+        name={project.name}
+        roleLabel={PROJECT_ROLE_LABELS[projectRole]}
+        memberCount={memberRows.length}
+        spec={spec}
+        canEdit={isDirector}
+      />
 
       <ProjectScripts projectId={project.id} canWrite={isDirector} />
 
@@ -75,24 +74,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             const live = isAppLive(app);
             const Icon = APP_ICONS[app.icon as keyof typeof APP_ICONS] ?? FileText;
             const inner = (
-              <Card
-                className={
-                  live
-                    ? "h-full transition-colors hover:border-primary/50"
-                    : "h-full opacity-45"
-                }
-              >
-                <CardContent className="space-y-2 pt-6">
-                  <div className="flex items-center gap-2">
-                    <Icon className="size-4 text-primary" />
-                    <span>{app.name}</span>
-                    {!live && (
-                      <Badge variant="outline" className="ml-auto text-xs">
-                        {app.phase} 开放
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs leading-5 text-muted-foreground">{app.description}</p>
+              <Card className={live ? "h-full" : "h-full opacity-45"}>
+                <CardContent className="flex items-start gap-3.5 pt-6">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-primary/25 bg-[linear-gradient(135deg,rgba(216,177,115,.18),rgba(216,177,115,.05))] shadow-[0_4px_14px_-6px_var(--glow-gold)]">
+                    <Icon className="size-5 text-primary" />
+                  </span>
+                  <span className="min-w-0 space-y-1.5">
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium">{app.name}</span>
+                      {!live && (
+                        <Badge variant="outline" className="text-xs">
+                          {app.phase} 开放
+                        </Badge>
+                      )}
+                    </span>
+                    <p className="text-xs leading-5 text-muted-foreground">{app.description}</p>
+                  </span>
                 </CardContent>
               </Card>
             );
@@ -105,15 +102,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             );
           })}
           <Link href={`/projects/${project.id}/artifacts`}>
-            <Card className="h-full transition-colors hover:border-primary/50">
-              <CardContent className="space-y-2 pt-6">
-                <div className="flex items-center gap-2">
-                  <FileText className="size-4 text-primary" />
-                  <span>项目产物</span>
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  剧本 / 资产清单 / 各类提示词产物，全员可查看复制
-                </p>
+            <Card className="h-full">
+              <CardContent className="flex items-start gap-3.5 pt-6">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-secondary">
+                  <FileText className="size-5 text-primary" />
+                </span>
+                <span className="min-w-0 space-y-1.5">
+                  <span className="font-medium">项目产物</span>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    剧本 / 资产清单 / 各类提示词产物，全员可查看复制
+                  </p>
+                </span>
               </CardContent>
             </Card>
           </Link>

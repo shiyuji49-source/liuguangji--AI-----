@@ -82,7 +82,7 @@
   --chart-3: #4fd1c5;
   --chart-4: #5c6580;
   --chart-5: #2c3344;
-  --radius: 0.875rem; /* 14px：更松弛现代 */
+  --radius: 1rem; /* 16px：大圆角卡片语言 */
   --sidebar: #10131b;
   --sidebar-foreground: #eceae1;
   --sidebar-primary: #d8b173;
@@ -274,5 +274,78 @@
   /* 表格行 hover 微提亮 */
   [data-slot="table-row"]:hover {
     background: rgba(255, 255, 255, 0.025);
+  }
+
+  /* ---------- App Frame：整个应用是一块悬浮的大圆角画布 ---------- */
+  .app-frame {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 22%),
+      radial-gradient(80% 60% at 18% 0%, rgba(216, 177, 115, 0.05), transparent 60%),
+      #0b0d15;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 2.25rem;
+    box-shadow:
+      0 30px 80px -30px rgba(0, 0, 0, 0.85),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* 左侧图标 Rail */
+  .rail-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 1rem;
+    color: var(--muted-foreground);
+    transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .rail-item:hover {
+    color: var(--foreground);
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-1px);
+  }
+  .rail-item[data-active="true"] {
+    color: var(--primary-foreground);
+    background: linear-gradient(135deg, var(--gold-a), var(--gold-c));
+    box-shadow: 0 6px 18px -6px var(--glow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  /* Hero 卡：项目控制台头部 */
+  .hero-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(216, 177, 115, 0.16);
+    border-radius: 1.75rem;
+    background:
+      radial-gradient(90% 140% at 100% 0%, rgba(216, 177, 115, 0.16), transparent 55%),
+      radial-gradient(60% 100% at 0% 100%, rgba(139, 149, 255, 0.07), transparent 60%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 30%),
+      #11141d;
+  }
+  .hero-glyph {
+    position: absolute;
+    right: -0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11rem;
+    line-height: 1;
+    font-weight: 600;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.1;
+  }
+
+  /* 金色胶囊（余额/状态 chips） */
+  .gold-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid rgba(216, 177, 115, 0.3);
+    background: linear-gradient(135deg, rgba(216, 177, 115, 0.14), rgba(216, 177, 115, 0.05));
+    color: var(--gold-a);
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.8rem;
   }
 }

@@ -6,17 +6,23 @@ import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProjectSpecFields, type ProjectSpec } from "@/components/project-spec-fields";
-import { TIER_LABELS, PRODUCTION_TYPE_HINT } from "@/lib/labels";
+import { TIER_LABELS } from "@/lib/labels";
 
+/** 项目控制台 Hero：项目名 + 规格徽章 + 规格值 + 鎏字水印装饰 + 编辑（参考游戏面板 hero 卡） */
 export function ProjectSpecCard({
   projectId,
+  name,
+  roleLabel,
+  memberCount,
   spec,
   canEdit,
 }: {
   projectId: string;
+  name: string;
+  roleLabel: string;
+  memberCount: number;
   spec: ProjectSpec;
   canEdit: boolean;
 }) {
@@ -47,25 +53,32 @@ export function ProjectSpecCard({
     { label: "级别", value: TIER_LABELS[spec.tier as "B" | "A" | "S"] ?? spec.tier },
     { label: "画幅", value: spec.aspect },
     { label: "制作类型", value: spec.productionType },
-    { label: "风格/题材", value: spec.styleGenre || "—（从剧本推导）" },
+    { label: "风格/题材", value: spec.styleGenre || "从剧本推导" },
   ];
 
   return (
-    <Card>
-      <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 py-4">
-        {items.map((it) => (
-          <div key={it.label}>
-            <div className="text-xs text-muted-foreground">{it.label}</div>
-            <div className="text-sm">{it.value}</div>
-          </div>
-        ))}
-        <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">{PRODUCTION_TYPE_HINT[spec.productionType]}</span>
+    <section className="hero-card p-7 sm:p-8">
+      <span className="hero-glyph text-liuguang">鎏</span>
+      <div className="relative z-10 space-y-4">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <SpecBadges spec={spec} />
+        </div>
+        <h1 className="text-3xl font-medium tracking-wide">{name}</h1>
+        <p className="text-sm text-muted-foreground">
+          我的角色：{roleLabel} · {memberCount} 位成员
+        </p>
+        <div className="flex flex-wrap items-end gap-x-10 gap-y-3 pt-2">
+          {items.map((it) => (
+            <div key={it.label}>
+              <div className="text-xs text-muted-foreground">{it.label}</div>
+              <div className="text-sm">{it.value}</div>
+            </div>
+          ))}
           {canEdit && (
             <Button
               variant="outline"
               size="sm"
-              className="h-7"
+              className="ml-auto h-8 border-primary/30 bg-primary/5"
               onClick={() => {
                 setDraft(spec);
                 setOpen(true);
@@ -75,7 +88,7 @@ export function ProjectSpecCard({
             </Button>
           )}
         </div>
-      </CardContent>
+      </div>
 
       {canEdit && (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -89,13 +102,13 @@ export function ProjectSpecCard({
                 {loading ? "保存中…" : "保存"}
               </Button>
               <p className="text-xs text-muted-foreground">
-                改动对之后的生成生效；已生成的产物不变。画幅/级别即时贯穿，制作类型/风格为软提示。
+                改动对之后的生成生效；已生成的产物不变。规格随每次生成注入 skill。
               </p>
             </div>
           </DialogContent>
         </Dialog>
       )}
-    </Card>
+    </section>
   );
 }
 
