@@ -1,0 +1,8 @@
+# 替换为已 ICP 备案的域名；Caddy 自动签发 HTTPS
+example.com {
+	reverse_proxy app:3000
+	encode gzip
+	request_body {
+		max_size 64MB
+	}
+}
