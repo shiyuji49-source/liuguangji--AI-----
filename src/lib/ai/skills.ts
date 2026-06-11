@@ -14,6 +14,7 @@ export type SkillKey =
   | "道具"
   | "场景"
   | "群演"
+  | "镜头设计"
   | "静帧"
   | "视频";
 
@@ -26,6 +27,9 @@ const SOURCES: Record<SkillKey, { dir?: string; file?: string; extras?: string[]
   道具: { file: "道具提示词SKILL.md" },
   群演: { file: "群演提示词SKILL.md" },
   场景: { dir: "scene-prompt-generator" },
+  // 镜头设计（découpage / 视听语言）：分镜表的大脑。与"静帧"分工——
+  // 镜头设计负责"怎么拆镜头/反应/运镜/调度"，静帧负责"挑哪些镜出图+怎么出"。
+  镜头设计: { dir: "shot-design" },
   静帧: { dir: "storyboard-master" },
   视频: {
     dir: "seedance-video-prompt",

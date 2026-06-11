@@ -20,6 +20,8 @@ export type ProjectSpec = {
 
 const EXTRACT_MAX_OUT = 6000;
 const GENERATE_MAX_OUT = 4096;
+// 静帧是 24 字段导演分解，成品常 8000+ 字符（≈6000+ token）；4096 会截断 → "跑不出来"。
+const STILL_MAX_OUT = 10000;
 
 // ===== 提取（提取资产 / 提取分镜，用裸提示词 + JSON，避开乐奇结构化输出不稳）=====
 
@@ -175,7 +177,8 @@ export type ExtractedShot = {
   needStill: boolean;
 };
 
-const SHOTLIST_MAX_OUT = 12000;
+// 镜头设计 skill 会产出更密的分镜（反应/插入/二次表达），镜数与描述都更多，需更高上限防截断
+const SHOTLIST_MAX_OUT = 20000;
 
 function parseShots(text: string): ExtractedShot[] {
   let t = text.trim();
@@ -215,7 +218,7 @@ export async function buildShotlist(opts: {
   spec: ProjectSpec;
   knownAssets: string[]; // 阶段①已提取的资产名，供 assetRefs 对齐
 }): Promise<{ shots: ExtractedShot[]; credits: number }> {
-  const skill = getSkillPrompt("静帧"); // 分镜大师：关键帧筛选/合并/分级取舍规则都在 skill 里
+  const skill = getSkillPrompt("镜头设计"); // 视听语言/découpage：分镜表的大脑
   const note = buildRuntimeNote({
     tier: opts.spec.tier,
     aspect: opts.spec.aspect,
@@ -224,12 +227,22 @@ export async function buildShotlist(opts: {
     episode: opts.episodeNo,
   });
 
+  const tier = opts.spec.tier;
   const userText = [
-    `【任务】只做分镜表（shotlist）构建这一步，不写静帧提示词：按你 skill 中「关键帧筛选与合并」的规则，把下面这一集拆成镜头列表。`,
-    `每镜一条 JSON：{"shotNo":序号,"sceneLabel":"场（如 3-1 破庙外·黄昏）","summary":"画面/动作摘要","shotType":"景别","cameraMove":"运镜","dialogue":"台词或声音（无则空串）","durationSec":预估秒数或null,"assetRefs":["@资产名"...],"needStill":是否值得出静帧}`,
-    `shotType 用规范景别词：远景/全景/中景/中近景/近景/特写/大特写/微距。cameraMove 写具体运镜（固定/手持呼吸/缓慢推近/拉远/横移/摇/升降/俯拍冻结等），禁写 zoom。`,
-    `durationSec 按镜头类型估：闪现建立镜头 1 秒内；单句台词 3-7；无台词反应（带情绪弧）5-10；插入/空镜 1-2；情绪特写完整弧 8-15。单镜不超过 15 秒。`,
-    `needStill 按 skill 的静帧取舍分级规则判断（当前项目分级见下方项目设定）。`,
+    `【任务】用你 skill 的视听语言/découpage 方法，把下面这一集设计成有电影感的分镜表（不是照剧本平铺、不是台词字幕轨）。你是导演，不是对白记录员。`,
+    `【硬要求（务必做到，否则就是 low）】`,
+    `1. 每场戏先给一个 master/建立镜交代空间；之后按戏剧节拍 beat 分切，镜头数由 beat 决定，不由台词行数决定。`,
+    `2. 对白场景必须有【听者反应镜头】：谁的处境因这句话改变就拍谁——皇上/上位者没说话也要给反应镜头（沉默承载戏）。重磅台词后给反应停留（更长时长），别只拍说话的人。`,
+    `3. 运镜要有动机：每个推/拉/摇/移/环绕/手持都为某个情绪或叙事服务；无动机就用固定。但**整场不能全是固定镜头**，情绪高点至少 1 个有动机运镜。`,
+    `4. 做视觉二次表达：剧本只写"路人说一句"这种，要扩成"环境→说→听者反应→插入→回应"的小段落（信息不变，只增"怎么拍"）。但禁止改剧情逻辑/人物关系/因果/结局/时代人设。`,
+    `5. 善用插入特写（手/信/刀/玉佩/茶盏）、POV 链（看→所见→反应）、纵深调度（前景上位者、后景弱者、遮挡）。相邻镜头景别拉开级差，守 180°轴线与视线匹配。`,
+    opts.spec.aspect === "9:16"
+      ? `6. 竖屏 9:16：少用横向双人全景，多用过肩/单人近景/纵向分层；大殿戏用纵深消失点构图。`
+      : ``,
+    `每镜一条 JSON：{"shotNo":序号,"sceneLabel":"场（如 1-1 皇城大街·日·外）","summary":"画面/动作摘要（含镜头意图，如『反应：皇帝眼神由疑转杀』）","shotType":"景别","cameraMove":"运镜","dialogue":"台词或声音（无对白写环境音/留空）","durationSec":预估秒数或null,"assetRefs":["@资产名"...],"needStill":是否值得出静帧}`,
+    `shotType 用规范景别词：远景/全景/中景/中近景/近景/特写/大特写/微距。cameraMove 写具体运镜（固定/手持呼吸/缓慢推近/拉远/横移/摇/升降/环绕/俯拍冻结/同轴猛推等），禁写 zoom。`,
+    `durationSec 按镜头类型估：闪现建立 1 秒内；单句台词 3-7；无台词反应（带情绪弧）5-10；插入/空镜 1-2；情绪特写完整弧 8-15。单镜不超过 15 秒。`,
+    `needStill（是否值得出静帧图作强控锚）：${tier === "B" ? "B 级跑量剧——只给复杂构图/多人/难控动作/关键情绪/会被反复参考的镜标 true，其余 false（直接进视频）" : `${tier} 级精品——构图复杂或关键情绪镜标 true，简单过场标 false`}。`,
     opts.knownAssets.length
       ? `assetRefs 里的资产名尽量对齐项目已建档资产：${opts.knownAssets.join("、")}（出现了清单外的重要资产也可以写新 @名）。`
       : `assetRefs 写画面中出现的关键人物/道具/场景的 @名。`,
@@ -586,15 +599,18 @@ export async function generateShotPrompt(opts: {
     },
     { role: "user", content: userText },
   ];
-  const est = await estimateLlmMaxCredits(MODEL_MAIN(), skill.length + userText.length, GENERATE_MAX_OUT);
+  // 静帧 24 字段成品常 8000+ 字符，需更高输出上限，否则被截断 → "跑不出来"
+  const maxOut = opts.target === "still" ? STILL_MAX_OUT : GENERATE_MAX_OUT;
+  const est = await estimateLlmMaxCredits(MODEL_MAIN(), skill.length + userText.length, maxOut);
   await precheck(opts.userId, est);
 
   const { text, usage, providerMetadata } = await generateText({
     model: mainModel(),
     messages,
-    maxOutputTokens: GENERATE_MAX_OUT,
+    maxOutputTokens: maxOut,
     providerOptions: { anthropic: { metadata: { userId: opts.userId } } },
   });
+  if (!text.trim()) throw Object.assign(new Error("模型返回空内容，请重试"), { status: 502 });
   const u = toLlmUsage(usage, providerMetadata as Record<string, Record<string, unknown>> | undefined);
   const { credits } = await chargeLlm({
     userId: opts.userId,
