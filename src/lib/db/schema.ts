@@ -171,6 +171,38 @@ export const scriptEpisodes = pgTable(
   (t) => [index("episode_script_idx").on(t.scriptId, t.episodeNo)]
 );
 
+// ===== 提示词生成器：卡片式生产（提取 → 生成）=====
+// 非对话模型：从剧本/集「提取」出条目（资产/关键帧/镜头），每条「生成」对应类型的提示词。
+export type PromptWorkspace = "资产" | "静帧" | "视频";
+export type PromptItemState = "empty" | "generating" | "done" | "failed";
+
+export const promptItems = pgTable(
+  "prompt_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    workspace: text("workspace").$type<PromptWorkspace>().notNull(),
+    kind: text("kind").notNull(), // 资产: 人物|服装|道具|场景|群演；静帧:静帧；视频:视频
+    name: text("name").notNull(), // 资产名 / 镜头标签（如 @木兰 / 第3集-镜2）
+    brief: text("brief").notNull().default(""), // 提取出的一句话描述/镜头摘要
+    episodeNo: integer("episode_no"), // 静帧/视频：来源集
+    scriptId: uuid("script_id").references(() => scripts.id),
+    promptText: text("prompt_text"), // 生成的提示词
+    params: jsonb("params"), // {aspect, model, usage...}
+    state: text("state").$type<PromptItemState>().notNull().default("empty"),
+    error: text("error"),
+    sortIndex: integer("sort_index").notNull().default(0),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("prompt_item_idx").on(t.projectId, t.workspace, t.episodeNo)]
+);
+
 // ===== P1 资产墙（按 §5 一次建全）=====
 export type AssetKind = "人物" | "服装" | "道具" | "场景" | "群演" | "静帧" | "视频";
 

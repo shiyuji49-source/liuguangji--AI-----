@@ -23,16 +23,6 @@ export interface AppDef {
 
 export const APPS: AppDef[] = [
   {
-    key: "script-doctor",
-    name: "剧本医生",
-    icon: "Stethoscope",
-    description: "通读长剧本，诊断与分集修改，产出资产清单",
-    phase: "P0",
-    rolesVisible: ["director"],
-    route: (id) => `/projects/${id}/apps/script-doctor`,
-    billingActions: ["llm"],
-  },
-  {
     key: "prompt-studio",
     name: "提示词生成器",
     icon: "Wand2",

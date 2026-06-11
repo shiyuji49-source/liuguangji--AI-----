@@ -1,0 +1,20 @@
+import { AuthError } from "../auth-helpers";
+import { promptModesFor, ASSET_MODES, type PromptMode } from "@/apps/registry";
+import type { ProjectRole } from "../db/schema";
+import type { Workspace } from "./run";
+
+/** 工作区访问校验（与 registry 的角色→工作区可见性一致） */
+export function assertWorkspaceAccess(role: ProjectRole, workspace: Workspace) {
+  const allowed = promptModesFor(role);
+  const ok =
+    workspace === "资产"
+      ? allowed.some((m) => (ASSET_MODES as string[]).includes(m))
+      : allowed.includes(workspace as PromptMode);
+  if (!ok) throw new AuthError("当前角色无权使用该工作区", 403);
+}
+
+/** 资产 kind 校验（人物/服装/… 须在角色可用模式内） */
+export function assertKindAccess(role: ProjectRole, kind: string) {
+  const allowed = promptModesFor(role) as string[];
+  if (!allowed.includes(kind)) throw new AuthError("当前角色无权生成该类型", 403);
+}

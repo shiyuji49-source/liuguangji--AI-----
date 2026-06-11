@@ -60,3 +60,31 @@ export function modelForApp(appKey: string) {
 export function modelNameForApp(appKey: string) {
   return appKey === "script-doctor" ? MODEL_HEAVY() : MODEL_MAIN();
 }
+
+/**
+ * AI SDK usage → 计费 usage。streamText/generateText 的 inputTokenDetails 可能为空，
+ * 回退读 usage.raw / providerMetadata.anthropic.usage 的 Anthropic 原始字段
+ * （input_tokens 本身不含缓存分量）。
+ */
+export function toLlmUsage(
+  usage: {
+    inputTokens?: number;
+    outputTokens?: number;
+    inputTokenDetails?: { noCacheTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number };
+    raw?: Record<string, unknown>;
+  },
+  providerMetadata?: Record<string, Record<string, unknown>>
+) {
+  const raw = (usage.raw ?? providerMetadata?.anthropic?.usage ?? {}) as Record<string, number>;
+  const d = usage.inputTokenDetails ?? {};
+  const cacheRead = d.cacheReadTokens ?? raw.cache_read_input_tokens ?? 0;
+  const cacheWrite = d.cacheWriteTokens ?? raw.cache_creation_input_tokens ?? 0;
+  const fresh =
+    d.noCacheTokens ?? raw.input_tokens ?? Math.max((usage.inputTokens ?? 0) - cacheRead - cacheWrite, 0);
+  return {
+    inputTokens: fresh,
+    outputTokens: usage.outputTokens ?? 0,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+  };
+}
