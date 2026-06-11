@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Upload, Trash2, Loader2, FileText, Eye } from "lucide-react";
+import { Upload, Trash2, Loader2, FileText, Eye, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -70,6 +70,31 @@ export function ProjectScripts({ projectId, canWrite }: { projectId: string; can
     await load();
   }
 
+  async function onResplit(s: Script) {
+    if (
+      !confirm(
+        `用升级后的分集器重新拆分《${s.title}》？\n\n会清空该剧本已有的分镜表、视频片段和集级提示词（资产提示词保留），集号将恢复为剧本原始集号。`
+      )
+    )
+      return;
+    setUploading(true);
+    try {
+      const res = await fetch(`/api/scripts/${s.id}/resplit`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "重新分集失败");
+        return;
+      }
+      for (const w of data.warnings ?? []) toast.warning(w, { duration: 8000 });
+      toast.success(
+        `重新分集完成：正文 ${data.episodeCount} 集${data.hasPreamble ? "（人物表/梗概已归入前置资料）" : ""}`
+      );
+      await load();
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function openPreview(s: Script) {
     const res = await fetch(`/api/scripts/${s.id}`);
     const data = await res.json();
@@ -131,14 +156,25 @@ export function ProjectScripts({ projectId, canWrite }: { projectId: string; can
                     <Eye className="size-3.5" /> 查看分集
                   </Button>
                   {canWrite && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                      onClick={() => onDelete(s)}
-                    >
-                      <Trash2 className="size-3.5" /> 删除
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => onResplit(s)}
+                        disabled={uploading}
+                      >
+                        <RefreshCw className="size-3.5" /> 重新分集
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={() => onDelete(s)}
+                      >
+                        <Trash2 className="size-3.5" /> 删除
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>

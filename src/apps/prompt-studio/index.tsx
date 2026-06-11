@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Wand2, FolderOpen } from "lucide-react";
+import { Wand2, FolderOpen, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectContextBadges } from "@/components/project-context-badges";
 import { promptStagesFor, promptModesFor, type PromptStage } from "@/apps/registry";
@@ -17,15 +16,24 @@ import { VideoSegmentsStage, type VideoSegment } from "./video-segments-stage";
 import type { Shot } from "./types";
 
 type ScriptLite = { id: string; title: string; episodeCount: number };
-type EpisodeLite = { episodeNo: number; title: string };
+type EpisodeOverview = {
+  episodeNo: number;
+  title: string;
+  chars: number;
+  shotCount: number;
+  needStill: number;
+  stillDone: number;
+  segCount: number;
+  segDone: number;
+};
 
 /**
  * 应用②提示词生成器（P0）：四阶段流水线（Toonflow 模型，非对话）。
  * ① 资产：全剧提取 5 类资产 → 各用对应 skill 生成资产提示词
  * ② 分镜表：选集构建 shotlist（分镜大师关键帧筛选规则）→ 可编辑表格
  * ③ 静帧：逐镜生成 24 字段静帧提示词（needStill 分级取舍）
- * ④ 视频：逐镜生成 Seedance 提示词（静帧锚 + 关联资产 + 分级骨架）
- * 项目规格（级别/画幅/制作类型/风格）自动注入每次生成。
+ * ④ 视频：划分片段（多镜合并 ≤15s）→ 逐片段生成 Seedance 提示词
+ * ②③④以左侧集列表导航（分集展示）；流水线条是唯一的阶段切换。
  */
 export function PromptStudioApp({
   projectId,
@@ -51,13 +59,11 @@ export function PromptStudioApp({
   const [stage, setStage] = useState<PromptStage>(stages[0] ?? "资产");
   const [scripts, setScripts] = useState<ScriptLite[] | null>(null);
   const [scriptId, setScriptId] = useState<string | null>(null);
-  const [episodes, setEpisodes] = useState<EpisodeLite[]>([]);
+  const [overview, setOverview] = useState<EpisodeOverview[]>([]);
   const [epNo, setEpNo] = useState<number | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
   const [segments, setSegments] = useState<VideoSegment[]>([]); // 视频片段（多镜合并）
   const [batchBusy, setBatchBusy] = useState(false); // 批量生成中锁定剧本/集切换
-
-  const needEpisode = stage !== "资产";
 
   useEffect(() => {
     (async () => {
@@ -69,23 +75,35 @@ export function PromptStudioApp({
     })();
   }, [projectId]);
 
+  // 分集总览（侧栏数据：每集镜数/静帧/片段进度）
+  const loadOverview = useCallback(async () => {
+    if (!scriptId) {
+      setOverview([]);
+      return;
+    }
+    const q = new URLSearchParams({ projectId, scriptId });
+    const res = await fetch(`/api/prompt-studio/overview?${q}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setOverview(data.episodes);
+    // 自动选第一正集
+    setEpNo((cur) => {
+      if (cur !== null && data.episodes.some((e: EpisodeOverview) => e.episodeNo === cur)) return cur;
+      const first = data.episodes.find((e: EpisodeOverview) => e.episodeNo > 0) ?? data.episodes[0];
+      return first ? first.episodeNo : null;
+    });
+  }, [projectId, scriptId]);
+
   useEffect(() => {
     (async () => {
-      if (!scriptId) {
-        setEpisodes([]);
-        return;
-      }
-      const res = await fetch(`/api/scripts/${scriptId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setEpisodes(data.episodes);
+      await loadOverview();
     })();
-  }, [scriptId]);
+  }, [loadOverview]);
 
   // 选中集 → 加载该集分镜表 + 视频片段（②③④共享）。AbortController 防过期响应覆盖新集数据
   const loadShots = useCallback(
     async (signal?: AbortSignal) => {
-      if (!scriptId || !epNo) {
+      if (!scriptId || epNo === null) {
         setShots([]);
         setSegments([]);
         return;
@@ -124,6 +142,60 @@ export function PromptStudioApp({
   const stillDone = shots.filter((s) => s.stillState === "done").length;
   const segDone = segments.filter((s) => s.state === "done").length;
 
+  // 当前集的侧栏行用本地状态实时校正（构建/生成后无需等总览刷新）
+  const liveOverview = overview.map((e) =>
+    e.episodeNo === epNo
+      ? {
+          ...e,
+          shotCount: shots.length,
+          needStill: shots.filter((s) => s.needStill).length,
+          stillDone,
+          segCount: segments.length,
+          segDone,
+        }
+      : e
+  );
+
+  const stageContent = (
+    <>
+      {stage === "分镜表" && (
+        <ShotlistStage
+          projectId={projectId}
+          scriptId={scriptId}
+          episodeNo={epNo}
+          shots={shots}
+          onShotsChange={setShots}
+        />
+      )}
+      {stage === "静帧" &&
+        (epNo !== null ? (
+          <ShotPromptsStage
+            target="still"
+            shots={shots}
+            onShotsChange={setShots}
+            tier={projectTier}
+            onBusyChange={setBatchBusy}
+          />
+        ) : (
+          <EpisodeHint />
+        ))}
+      {stage === "视频" &&
+        (epNo !== null ? (
+          <VideoSegmentsStage
+            projectId={projectId}
+            scriptId={scriptId}
+            episodeNo={epNo}
+            shots={shots}
+            segments={segments}
+            onSegmentsChange={setSegments}
+            onBusyChange={setBatchBusy}
+          />
+        ) : (
+          <EpisodeHint />
+        ))}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -136,49 +208,42 @@ export function PromptStudioApp({
           productionType={projectProductionType}
           styleGenre={projectStyleGenre}
         />
-        <Tabs value={stage} onValueChange={(v) => setStage(v as PromptStage)} className="ml-auto">
-          <TabsList>
-            {stages.map((s, i) => (
-              <TabsTrigger key={s} value={s}>
-                {i + 1} {s}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
       </div>
 
-      {/* 流水线：发光节点 + 流动金连线 */}
+      {/* 阶段导航（唯一）：发光节点 + 流动金连线。节点只负责切换阶段，操作按钮在各阶段内部 */}
       <div className="flex flex-wrap items-center gap-0 text-xs">
         {(
           [
-            { key: "资产", label: "提取资产 → 资产提示词", info: "" },
+            { key: "资产", label: "资产", info: "" },
             {
               key: "分镜表",
-              label: "构建分镜表",
-              info: shots.length > 0 && epNo ? `${shots.length} 镜` : "",
+              label: "分镜表",
+              info: shots.length > 0 && epNo !== null ? `${shots.length} 镜` : "",
             },
             {
               key: "静帧",
-              label: "静帧提示词",
+              label: "静帧",
               info:
                 shots.length > 0 ? `${stillDone}/${shots.filter((s) => s.needStill).length}` : "",
             },
             {
               key: "视频",
-              label: "视频提示词 · 多镜合并",
+              label: "视频 · 多镜合并",
               info: segments.length > 0 ? `${segDone}/${segments.length} 片段` : "",
             },
           ] as { key: PromptStage; label: string; info: string }[]
         ).map((s, i, arr) => {
           const active = stage === s.key;
+          const allowed = stages.includes(s.key);
           return (
             <div key={s.key} className="flex items-center">
               <button
-                onClick={() => stages.includes(s.key) && setStage(s.key)}
-                className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 transition-all duration-200 ${
+                onClick={() => allowed && setStage(s.key)}
+                disabled={!allowed}
+                className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 transition-all duration-200 disabled:opacity-35 ${
                   active
                     ? "border-primary/50 bg-primary/10 text-foreground shadow-[0_0_18px_-4px_var(--glow-gold)]"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
                 }`}
               >
                 <span
@@ -194,7 +259,7 @@ export function PromptStudioApp({
                 {s.info && <span className={active ? "text-primary" : "opacity-60"}>{s.info}</span>}
               </button>
               {i < arr.length - 1 && (
-                <div className={`h-px w-6 sm:w-10 ${active ? "liuguang-line" : "bg-border"}`} />
+                <div className={`h-px w-5 sm:w-8 ${active ? "liuguang-line" : "bg-border"}`} />
               )}
             </div>
           );
@@ -211,95 +276,101 @@ export function PromptStudioApp({
             </Button>
           </CardContent>
         </Card>
-      ) : (
+      ) : stage === "资产" ? (
         <>
-          {/* 源选择（剧本；②③④还要选集） */}
-          {(scripts && scripts.length > 1) || needEpisode ? (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              {scripts && scripts.length > 1 && (
-                <Select
-                  value={scriptId ?? undefined}
-                  disabled={batchBusy}
-                  onValueChange={(v) => {
-                    setScriptId(v);
-                    setEpNo(null);
-                    setShots([]);
-                  }}
-                >
-                  <SelectTrigger className="h-8 w-44">
-                    <SelectValue placeholder="选剧本" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scripts.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {needEpisode && (
-                <Select
-                  value={epNo === null ? undefined : String(epNo)}
-                  disabled={batchBusy}
-                  onValueChange={(v) => setEpNo(Number(v))}
-                >
-                  <SelectTrigger className="h-8 w-48">
-                    <SelectValue placeholder="选集（②③④按集工作）" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {episodes.map((e) => (
-                      <SelectItem key={e.episodeNo} value={String(e.episodeNo)}>
-                        第 {e.episodeNo} 集{e.title ? ` · ${e.title}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {scripts && scripts.length > 1 && (
+            <ScriptSelect scripts={scripts} scriptId={scriptId} disabled={batchBusy} onChange={(v) => {
+              setScriptId(v);
+              setEpNo(null);
+            }} />
+          )}
+          <AssetsStage projectId={projectId} scriptId={scriptId} allowedKinds={allowedKinds} />
+        </>
+      ) : (
+        /* ②③④：左侧集列表（分集展示）+ 右侧阶段内容 */
+        <div className="flex gap-4">
+          <aside className="w-60 shrink-0 space-y-2">
+            {scripts && scripts.length > 1 && (
+              <ScriptSelect scripts={scripts} scriptId={scriptId} disabled={batchBusy} onChange={(v) => {
+                setScriptId(v);
+                setEpNo(null);
+              }} />
+            )}
+            <div className="max-h-[calc(100vh-18rem)] space-y-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
+              {liveOverview.length === 0 ? (
+                <p className="px-2 py-6 text-center text-xs text-muted-foreground">剧本分集加载中…</p>
+              ) : (
+                liveOverview.map((e) => {
+                  const active = e.episodeNo === epNo;
+                  const isPre = e.episodeNo === 0;
+                  return (
+                    <button
+                      key={e.episodeNo}
+                      disabled={batchBusy}
+                      onClick={() => setEpNo(e.episodeNo)}
+                      className={`block w-full rounded-lg px-2.5 py-2 text-left transition-colors disabled:opacity-50 ${
+                        active
+                          ? "bg-primary/12 text-foreground shadow-[inset_0_0_0_1px_rgba(216,177,115,.35)]"
+                          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-sm">
+                        {isPre ? (
+                          <>
+                            <BookOpen className="size-3.5 shrink-0 opacity-70" />
+                            <span className="truncate">前置资料</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className={active ? "text-primary" : ""}>第 {e.episodeNo} 集</span>
+                            {e.title && <span className="truncate text-xs opacity-70">{e.title}</span>}
+                          </>
+                        )}
+                      </div>
+                      {!isPre && (
+                        <div className="mt-0.5 text-[11px] opacity-60">
+                          {e.shotCount > 0
+                            ? `${e.shotCount} 镜 · 静 ${e.stillDone}/${e.needStill} · 片段 ${e.segDone}/${e.segCount}`
+                            : `${(e.chars / 1000).toFixed(1)}k 字 · 未构建`}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
-          ) : null}
-
-          {stage === "资产" && (
-            <AssetsStage projectId={projectId} scriptId={scriptId} allowedKinds={allowedKinds} />
-          )}
-          {stage === "分镜表" && (
-            <ShotlistStage
-              projectId={projectId}
-              scriptId={scriptId}
-              episodeNo={epNo}
-              shots={shots}
-              onShotsChange={setShots}
-            />
-          )}
-          {stage === "静帧" &&
-            (epNo ? (
-              <ShotPromptsStage
-                target="still"
-                shots={shots}
-                onShotsChange={setShots}
-                tier={projectTier}
-                onBusyChange={setBatchBusy}
-              />
-            ) : (
-              <EpisodeHint />
-            ))}
-          {stage === "视频" &&
-            (epNo ? (
-              <VideoSegmentsStage
-                projectId={projectId}
-                scriptId={scriptId}
-                episodeNo={epNo}
-                shots={shots}
-                segments={segments}
-                onSegmentsChange={setSegments}
-                onBusyChange={setBatchBusy}
-              />
-            ) : (
-              <EpisodeHint />
-            ))}
-        </>
+          </aside>
+          <div className="min-w-0 flex-1">{stageContent}</div>
+        </div>
       )}
     </div>
+  );
+}
+
+function ScriptSelect({
+  scripts,
+  scriptId,
+  disabled,
+  onChange,
+}: {
+  scripts: ScriptLite[];
+  scriptId: string | null;
+  disabled: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <Select value={scriptId ?? undefined} disabled={disabled} onValueChange={onChange}>
+      <SelectTrigger className="h-8 w-full max-w-60">
+        <SelectValue placeholder="选剧本" />
+      </SelectTrigger>
+      <SelectContent>
+        {scripts.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.title}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -307,7 +378,7 @@ function EpisodeHint() {
   return (
     <Card>
       <CardContent className="py-12 text-center text-sm text-muted-foreground">
-        先在上方选一集（静帧/视频按集逐镜工作）
+        先在左侧选一集（②③④按集工作）
       </CardContent>
     </Card>
   );
