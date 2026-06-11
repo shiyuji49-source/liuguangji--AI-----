@@ -9,11 +9,11 @@ export const maxDuration = 120;
 
 type Params = { params: Promise<{ id: string }> };
 
-// 项目剧本列表（剧本医生=导演专用，与应用可见性一致）
+// 项目剧本列表。读=任意项目成员（分镜师做静帧需选剧本集）；上传=导演
 export async function GET(_req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    await requireProjectMember(id, ["director"]);
+    await requireProjectMember(id);
     const rows = await db
       .select()
       .from(scripts)

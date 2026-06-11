@@ -2,15 +2,15 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { scripts, scriptEpisodes } from "@/lib/db/schema";
 import { toErrorResponse } from "@/lib/auth-helpers";
-import { loadScriptForDirector } from "@/lib/scripts/access";
+import { loadScript } from "@/lib/scripts/access";
 
 type Params = { params: Promise<{ id: string }> };
 
-// 剧本详情：集列表（不含正文，正文按集取）
+// 剧本详情：集列表（不含正文，正文按集取）。读=项目成员
 export async function GET(_req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const script = await loadScriptForDirector(id);
+    const script = await loadScript(id);
     const episodes = await db
       .select({
         episodeNo: scriptEpisodes.episodeNo,
@@ -29,7 +29,7 @@ export async function GET(_req: Request, { params }: Params) {
 export async function DELETE(_req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    await loadScriptForDirector(id);
+    await loadScript(id, { requireDirector: true });
     await db.delete(scriptEpisodes).where(eq(scriptEpisodes.scriptId, id));
     await db.delete(scripts).where(eq(scripts.id, id));
     return Response.json({ ok: true });

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Wand2, Import } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Wand2, Import, ClipboardList, Clapperboard, Film } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -21,10 +22,15 @@ import type { ProjectRole, ProjectTier } from "@/lib/db/schema";
 const ASPECTS = ["9:16", "16:9", "4:5", "3:4", "1:1", "2.39:1"];
 
 type Workspace = "资产" | "静帧" | "视频";
+type ScriptLite = { id: string; title: string; episodeCount: number };
+type EpisodeLite = { episodeNo: number; title: string; chars: number };
 
 /**
- * 应用②提示词生成器（P0）：资产（人物/服装/道具/场景/群演 5 模式）/ 静帧 / 视频三工作区。
- * 模型 = LLM_MODEL_MAIN（claude-sonnet-4-6）。「带入资产清单」为全站唯一跨应用带入。
+ * 应用②提示词生成器（P0）：结构化工作台，三工作区各自连上流水线的自然输入。
+ * - 资产（人物/服装/道具/场景/群演 5 模式）← 带入剧本医生的「资产清单」
+ * - 静帧 ← 选项目剧本的某一集（服务端把该集喂给分镜大师 skill）
+ * - 视频 ← 带入「静帧提示词」产物（+ 资产/参考图）
+ * 数据连上、流程可见，但每步仍是人来驱动、多轮迭代。模型 = LLM_MODEL_MAIN（sonnet）。
  */
 export function PromptStudioApp({
   projectId,
@@ -54,7 +60,41 @@ export function PromptStudioApp({
   const [episode, setEpisode] = useState("");
   const [aspect, setAspect] = useState("9:16");
   const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [autoSend, setAutoSend] = useState<{ text: string; nonce: number } | null>(null);
+  const [importType, setImportType] = useState<string | null>(null);
+
+  // 静帧工作区：项目剧本 + 选集
+  const [scripts, setScripts] = useState<ScriptLite[]>([]);
+  const [scriptId, setScriptId] = useState<string | null>(null);
+  const [episodes, setEpisodes] = useState<EpisodeLite[]>([]);
+  const [epNo, setEpNo] = useState<number | null>(null);
+
+  const loadScripts = useCallback(async () => {
+    const res = await fetch(`/api/projects/${projectId}/scripts`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setScripts(data.scripts);
+    if (data.scripts.length > 0) setScriptId((cur) => cur ?? data.scripts[0].id);
+  }, [projectId]);
+
+  useEffect(() => {
+    (async () => {
+      if (workspace === "静帧") await loadScripts();
+    })();
+  }, [workspace, loadScripts]);
+
+  useEffect(() => {
+    (async () => {
+      if (!scriptId) {
+        setEpisodes([]);
+        return;
+      }
+      const res = await fetch(`/api/scripts/${scriptId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setEpisodes(data.episodes);
+    })();
+  }, [scriptId]);
 
   const mode: PromptMode = workspace === "资产" ? assetMode : (workspace as PromptMode);
   const artifactTypes =
@@ -67,6 +107,13 @@ export function PromptStudioApp({
   if (workspaces.length === 0) {
     return <p className="py-16 text-center text-sm text-muted-foreground">当前角色无可用工作区</p>;
   }
+
+  const sendBody = () => {
+    if (workspace === "静帧") {
+      return { aspect, scriptId: scriptId ?? undefined, scope: epNo ?? undefined };
+    }
+    return { episode: episode || undefined, aspect };
+  };
 
   return (
     <div className="space-y-4">
@@ -86,46 +133,60 @@ export function PromptStudioApp({
       </div>
 
       <ChatWorkspace
-        key={mode}
+        key={workspace === "资产" ? assetMode : workspace}
         appKey="prompt-studio"
         projectId={projectId}
         mode={mode}
-        sendBody={() => ({ episode: episode || undefined, aspect })}
+        sendBody={sendBody}
         allowImageUpload
         artifactTypes={artifactTypes}
         prefill={prefill}
+        autoSend={autoSend}
         placeholder={
           workspace === "资产"
-            ? `描述要生成的${assetMode}，或带入资产清单批量生成`
+            ? `描述要生成的${assetMode}，或先「带入资产清单」批量生成`
             : workspace === "静帧"
-              ? "粘贴本集剧本片段或描述画面，生成静帧（分镜）提示词"
-              : "描述镜头内容（可附静帧提示词/参考图），生成 Seedance 视频提示词"
+              ? epNo
+                ? `已选第 ${epNo} 集，可直接说「生成本集关键帧静帧」或补充镜头偏好`
+                : "选一集剧本后生成静帧；也可直接粘贴单场戏"
+              : "先「带入静帧提示词」，再补充资产/参考图生成 Seedance 视频提示词"
         }
         paramsBar={
-          <div className="flex flex-wrap items-center gap-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             {workspace === "资产" && (
-              <Select value={assetMode} onValueChange={(v) => setAssetMode(v as PromptMode)}>
-                <SelectTrigger className="h-7 w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSET_MODES.filter((m) => allowedModes.includes(m)).map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Select value={assetMode} onValueChange={(v) => setAssetMode(v as PromptMode)}>
+                  <SelectTrigger className="h-7 w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASSET_MODES.filter((m) => allowedModes.includes(m)).map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <EpisodeInput value={episode} onChange={setEpisode} />
+              </>
             )}
-            <label className="flex items-center gap-2 text-muted-foreground">
-              集数
-              <Input
-                value={episode}
-                onChange={(e) => setEpisode(e.target.value.replace(/[^0-9]/g, ""))}
-                placeholder="选填"
-                className="h-7 w-16"
+
+            {workspace === "静帧" && (
+              <StillframeSource
+                scripts={scripts}
+                scriptId={scriptId}
+                onScript={(id) => {
+                  setScriptId(id);
+                  setEpNo(null);
+                }}
+                episodes={episodes}
+                epNo={epNo}
+                onEpisode={setEpNo}
               />
-            </label>
+            )}
+
+            {workspace === "视频" && <EpisodeInput value={episode} onChange={setEpisode} />}
+
             <label className="flex items-center gap-2 text-muted-foreground">
               画幅
               <Select value={aspect} onValueChange={setAspect}>
@@ -142,25 +203,45 @@ export function PromptStudioApp({
               </Select>
             </label>
             <span className="text-xs text-muted-foreground">分级 {projectTier}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto h-7"
-              onClick={() => setImportOpen(true)}
-            >
-              <Import className="size-3.5" /> 带入资产清单
-            </Button>
+
+            <div className="ml-auto flex items-center gap-2">
+              {workspace === "资产" && (
+                <Button variant="outline" size="sm" className="h-7" onClick={() => setImportType("资产清单")}>
+                  <Import className="size-3.5" /> 带入资产清单
+                </Button>
+              )}
+              {workspace === "静帧" && epNo !== null && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() =>
+                    setAutoSend({
+                      text: `为第 ${epNo} 集生成关键帧静帧提示词：先按 skill 做关键帧筛选与合并，再按 24 字段格式输出，每帧末尾附可直接喂 image2 的成品提示词。`,
+                      nonce: Date.now(),
+                    })
+                  }
+                >
+                  <Clapperboard className="size-3.5" /> 生成本集静帧
+                </Button>
+              )}
+              {workspace === "视频" && (
+                <Button variant="outline" size="sm" className="h-7" onClick={() => setImportType("静帧提示词")}>
+                  <Film className="size-3.5" /> 带入静帧提示词
+                </Button>
+              )}
+            </div>
           </div>
         }
       />
 
       <ImportArtifactDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
+        type={importType}
+        onClose={() => setImportType(null)}
         projectId={projectId}
         onPick={(text) => {
           setPrefill({ text, nonce: Date.now() });
-          setImportOpen(false);
+          setImportType(null);
           toast.success("已带入输入框，可编辑后发送");
         }}
       />
@@ -168,23 +249,105 @@ export function PromptStudioApp({
   );
 }
 
+function EpisodeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-muted-foreground">
+      集数
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))}
+        placeholder="选填"
+        className="h-7 w-16"
+      />
+    </label>
+  );
+}
+
+function StillframeSource({
+  scripts,
+  scriptId,
+  onScript,
+  episodes,
+  epNo,
+  onEpisode,
+}: {
+  scripts: ScriptLite[];
+  scriptId: string | null;
+  onScript: (id: string) => void;
+  episodes: EpisodeLite[];
+  epNo: number | null;
+  onEpisode: (n: number | null) => void;
+}) {
+  if (scripts.length === 0) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        本项目还没有剧本（可让导演在剧本医生上传）；也可直接粘贴单场戏生成
+      </span>
+    );
+  }
+  return (
+    <>
+      {scripts.length > 1 && (
+        <Select value={scriptId ?? undefined} onValueChange={onScript}>
+          <SelectTrigger className="h-7 w-36">
+            <SelectValue placeholder="选剧本" />
+          </SelectTrigger>
+          <SelectContent>
+            {scripts.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <Select
+        value={epNo === null ? "none" : String(epNo)}
+        onValueChange={(v) => onEpisode(v === "none" ? null : Number(v))}
+      >
+        <SelectTrigger className="h-7 w-40">
+          <SelectValue placeholder="选集" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">不带入（自由输入）</SelectItem>
+          {episodes.map((e) => (
+            <SelectItem key={e.episodeNo} value={String(e.episodeNo)}>
+              第 {e.episodeNo} 集{e.title ? ` · ${e.title}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {epNo !== null && (
+        <Badge variant="outline" className="border-primary/40 text-primary">
+          已带入第 {epNo} 集
+        </Badge>
+      )}
+    </>
+  );
+}
+
 function ImportArtifactDialog({
-  open,
+  type,
   onClose,
   projectId,
   onPick,
 }: {
-  open: boolean;
+  type: string | null;
   onClose: () => void;
   projectId: string;
   onPick: (text: string) => void;
 }) {
-  const [items, setItems] = useState<{ id: string; title: string; content: string; createdAt: string }[]>([]);
+  const [items, setItems] = useState<{ id: string; title: string; content: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const open = type !== null;
+  const label = type === "静帧提示词" ? "静帧提示词" : "资产清单";
+  const from = type === "静帧提示词" ? "（来自本工作台静帧工作区）" : "（来自剧本医生）";
+
   async function load() {
+    if (!type) return;
     setLoading(true);
-    const res = await fetch(`/api/artifacts?projectId=${projectId}&type=${encodeURIComponent("资产清单")}`);
+    const res = await fetch(`/api/artifacts?projectId=${projectId}&type=${encodeURIComponent(type)}`);
     const data = await res.json();
     setLoading(false);
     if (res.ok) setItems(data.artifacts);
@@ -200,14 +363,18 @@ function ImportArtifactDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>带入资产清单（来自剧本医生）</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardList className="size-4 text-primary" />
+            带入{label}
+            <span className="text-xs font-normal text-muted-foreground">{from}</span>
+          </DialogTitle>
         </DialogHeader>
         <ScrollArea className="max-h-[50vh]">
           <div className="space-y-2">
             {loading && <p className="py-6 text-center text-sm text-muted-foreground">加载中…</p>}
             {!loading && items.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                暂无「资产清单」产物。请先在剧本医生中生成并「存为产物」。
+                暂无「{label}」产物。请先生成并「存为产物」。
               </p>
             )}
             {items.map((a) => (

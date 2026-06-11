@@ -210,14 +210,16 @@ export async function POST(req: Request) {
 
     const skillText = getSkillPrompt(skillKey);
 
-    // 项目级剧本注入（仅剧本医生）：全剧=独立缓存块（与 skill 同享前缀缓存）；单集=轻量注入
+    // 项目级剧本注入：剧本医生（全剧/单集）；提示词生成器的静帧工作区（单集，喂分镜大师）
+    const scriptInjectable =
+      app.key === "script-doctor" || (app.key === "prompt-studio" && conv.mode === "静帧");
     let scriptBlock = "";
     let scopeEpisode: number | undefined;
-    if (app.key === "script-doctor" && params.scriptId) {
-      const { loadScriptForDirector } = await import("@/lib/scripts/access");
+    if (scriptInjectable && params.scriptId) {
+      const { loadScript } = await import("@/lib/scripts/access");
       const { scriptEpisodes } = await import("@/lib/db/schema");
       const { asc: ascFn } = await import("drizzle-orm");
-      const script = await loadScriptForDirector(params.scriptId);
+      const script = await loadScript(params.scriptId);
       if (script.projectId !== conv.projectId) throw new AuthError("剧本不属于该项目", 403);
 
       if (params.scope === "full" || params.scope === undefined) {
