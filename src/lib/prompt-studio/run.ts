@@ -333,7 +333,8 @@ export async function planSegments(opts: {
     episode: opts.episodeNo,
   });
   const userText = [
-    `【任务】只做"片段划分"这一步，不写提示词：按 skill 的片段划分规则（同场景、同角色组、情绪/时间连续的相邻镜合并；每片段 ≤15 秒；跨场景硬切/角色进出场/独立情绪弧/道具插镜才拆分；文延武拼），把下面整集分镜表分组。`,
+    `【任务】只做"片段划分"这一步，不写提示词：按 skill 的片段划分规则（同场景、同角色组、情绪/时间连续的相邻镜合并；每片段 ≤15 秒；跨场景硬切/角色组改变才拆分；文延武拼），把下面整集分镜表分组。`,
+    `【打满原则（最高优先级）】15 秒是要打满的预算，不只是上限：相邻镜必须持续合并，直到再加一镜就超 15 秒或跨场景为止。禁止把同场连续的戏拆成多个小片段；插镜/反应镜并入所在片段，不单独成段。输出前自查：任何相邻两片段若同场景且时长合计 ≤15 秒，必须先合并成一个再输出。`,
     `每片段一条 JSON：{"segmentNo":序号,"label":"一句话标签（如 破庙对峙·拔刀缠斗）","shotNos":[相邻镜号],"durationSec":合计目标秒数(≤15)}`,
     `镜号必须全部覆盖、不重复、保持原顺序相邻合并。只输出 JSON 数组，不要任何额外文字。`,
     note,
@@ -398,6 +399,38 @@ export async function planSegments(opts: {
       segments = [];
     }
   }
+
+  // 确定性打满兜底（不依赖模型自觉）：相邻片段若同场景且合计 ≤15s，强制合并，循环到不动点。
+  // 用户铁律：15 秒是要打满的预算——"片段234加一起是15秒，为什么不合并？"
+  const sceneByNo = new Map(opts.shots.map((s) => [s.shotNo, s.sceneLabel.trim()]));
+  const sceneOf = (nos: number[]): string | null => {
+    const labels = new Set(nos.map((n) => sceneByNo.get(n) ?? `?${n}`));
+    return labels.size === 1 ? [...labels][0] : null;
+  };
+  let mergedAny = true;
+  while (mergedAny) {
+    mergedAny = false;
+    for (let i = 0; i + 1 < segments.length; i++) {
+      const a = segments[i];
+      const b = segments[i + 1];
+      const da = a.durationSec ?? 15;
+      const db = b.durationSec ?? 15;
+      const sa = sceneOf(a.shotNos);
+      const sb = sceneOf(b.shotNos);
+      if (sa !== null && sa === sb && da + db <= 15) {
+        segments.splice(i, 2, {
+          segmentNo: 0,
+          label: `${a.label}·${b.label}`.slice(0, 60),
+          shotNos: [...a.shotNos, ...b.shotNos],
+          durationSec: da + db,
+        });
+        mergedAny = true;
+        break;
+      }
+    }
+  }
+  segments.forEach((s, i) => (s.segmentNo = i + 1));
+
   return { segments, credits };
 }
 
