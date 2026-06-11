@@ -246,9 +246,12 @@ export async function POST(req: Request) {
       }
     }
 
+    // 项目级规格下沉：画幅应用可覆盖（params.aspect），其余取项目默认
     const runtimeNote = buildRuntimeNote({
       tier: project.tier,
-      aspect: params.aspect,
+      aspect: params.aspect || project.aspect,
+      productionType: project.productionType,
+      styleGenre: project.styleGenre,
       episode: scopeEpisode ?? params.episode,
     });
 

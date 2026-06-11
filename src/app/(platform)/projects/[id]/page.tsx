@@ -6,10 +6,12 @@ import { db } from "@/lib/db";
 import { memberships, users } from "@/lib/db/schema";
 import { requireProjectMember, AuthError } from "@/lib/auth-helpers";
 import { APPS, appsVisibleFor, isAppLive } from "@/apps/registry";
-import { PROJECT_ROLE_LABELS, TIER_LABELS } from "@/lib/labels";
+import { PROJECT_ROLE_LABELS } from "@/lib/labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MembersPanel } from "./members-panel";
+import { ProjectSpecCard, SpecBadges } from "./project-spec-card";
+import { ProjectScripts } from "./project-scripts";
 
 const APP_ICONS = {
   Stethoscope,
@@ -45,20 +47,29 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     .innerJoin(users, eq(memberships.userId, users.id))
     .where(eq(memberships.projectId, project.id));
 
+  const spec = {
+    tier: project.tier,
+    aspect: project.aspect,
+    productionType: project.productionType,
+    styleGenre: project.styleGenre ?? "",
+  };
+
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg">{project.name}</h1>
-        <Badge variant="outline" className="border-primary/40 text-primary">
-          {TIER_LABELS[project.tier]}
-        </Badge>
+        <SpecBadges spec={spec} />
         <span className="text-xs text-muted-foreground">
           我的角色：{PROJECT_ROLE_LABELS[projectRole]}
         </span>
       </div>
 
+      <ProjectSpecCard projectId={project.id} spec={spec} canEdit={isDirector} />
+
+      <ProjectScripts projectId={project.id} canWrite={isDirector} />
+
       <section className="space-y-3">
-        <h2 className="text-sm text-muted-foreground">应用</h2>
+        <h2 className="text-sm text-muted-foreground">应用（顺序自由，剧本医生非必经）</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {APPS.filter((a) => visibleKeys.has(a.key)).map((app) => {
             const live = isAppLive(app);

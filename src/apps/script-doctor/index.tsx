@@ -46,6 +46,7 @@ export function ScriptDoctorApp({
   projectId: string;
   projectName: string;
   projectTier: ProjectTier;
+  projectAspect: string;
   projectRole: ProjectRole;
   userId: string;
 }) {

@@ -20,6 +20,7 @@ export type PlatformRole = "member" | "director" | "storyboard" | "artist" | "po
 export type ProjectRole = "director" | "storyboard" | "artist" | "post";
 export type UserStatus = "active" | "banned";
 export type ProjectTier = "B" | "A" | "S";
+export type ProductionType = "真人" | "3D" | "2D";
 
 export const users = pgTable(
   "users",
@@ -52,10 +53,15 @@ export const verificationTokens = pgTable(
   (t) => [index("vt_identifier_idx").on(t.identifier, t.type), uniqueIndex("vt_token_idx").on(t.token)]
 );
 
+// 项目 = 配置中枢（§ 重构）：建项目时定下的全局创作规格，下沉到所有应用。
+// 级联范式：项目存默认值；应用读默认、单次可覆盖（不回写项目）；运行时注入 skill。
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
-  tier: text("tier").$type<ProjectTier>().notNull().default("B"),
+  tier: text("tier").$type<ProjectTier>().notNull().default("B"), // 级别 B/A/S：分镜取舍、视频骨架（即时生效）
+  aspect: text("aspect").notNull().default("9:16"), // 画幅：构图/出图规格（即时生效）
+  productionType: text("production_type").$type<ProductionType>().notNull().default("真人"), // 制作类型（P1 出图时编译为模型族；现为软提示）
+  styleGenre: text("style_genre"), // 风格/题材（skill 多从剧本自动推导；现为软提示+元数据）
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),

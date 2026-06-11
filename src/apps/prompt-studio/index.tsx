@@ -36,11 +36,13 @@ export function PromptStudioApp({
   projectId,
   projectName,
   projectTier,
+  projectAspect,
   projectRole,
 }: {
   projectId: string;
   projectName: string;
   projectTier: ProjectTier;
+  projectAspect: string;
   projectRole: ProjectRole;
   userId: string;
 }) {
@@ -58,7 +60,7 @@ export function PromptStudioApp({
     (allowedModes.find((m) => (ASSET_MODES as string[]).includes(m)) as PromptMode) ?? "人物"
   );
   const [episode, setEpisode] = useState("");
-  const [aspect, setAspect] = useState("9:16");
+  const [aspect, setAspect] = useState(projectAspect); // 默认=项目画幅，可临时覆盖
   const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const [autoSend, setAutoSend] = useState<{ text: string; nonce: number } | null>(null);
   const [importType, setImportType] = useState<string | null>(null);

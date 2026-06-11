@@ -61,17 +61,21 @@ export function getSkillPrompt(key: SkillKey): string {
   return text;
 }
 
-/** 运行时附注（独立小块注入，不并入 skill 块，保持缓存命中稳定） */
+/** 运行时附注（项目级创作规格下沉：贴在最后一条用户消息上发送，不入库） */
 export function buildRuntimeNote(opts: {
   tier?: ProjectTier;
   aspect?: string;
+  productionType?: string;
+  styleGenre?: string | null;
   episode?: number | string;
 }): string {
   const lines: string[] = [];
   if (opts.tier) lines.push(`【项目分级】${opts.tier} 级`);
   if (opts.aspect) lines.push(`【画幅】${opts.aspect}`);
+  if (opts.productionType) lines.push(`【制作类型】${opts.productionType}`);
+  if (opts.styleGenre) lines.push(`【风格/题材】${opts.styleGenre}`);
   if (opts.episode !== undefined && opts.episode !== null && `${opts.episode}` !== "") {
     lines.push(`【当前集】第 ${opts.episode} 集`);
   }
-  return lines.join("\n");
+  return lines.length ? `【项目设定（请遵循）】\n${lines.join("\n")}` : "";
 }

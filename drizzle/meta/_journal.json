@@ -15,6 +15,13 @@
       "when": 1781172734186,
       "tag": "0001_nostalgic_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781177596883,
+      "tag": "0002_far_steve_rogers",
+      "breakpoints": true
     }
   ]
 }
