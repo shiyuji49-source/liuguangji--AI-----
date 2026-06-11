@@ -6,6 +6,22 @@ import { requireProjectMember, toErrorResponse } from "@/lib/auth-helpers";
 
 type Params = { params: Promise<{ id: string }> };
 
+// 项目成员列表（成员 Rail 用；任意项目成员可读）
+export async function GET(_req: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    await requireProjectMember(id);
+    const rows = await db
+      .select({ userId: memberships.userId, name: users.name, role: memberships.projectRole })
+      .from(memberships)
+      .innerJoin(users, eq(memberships.userId, users.id))
+      .where(eq(memberships.projectId, id));
+    return Response.json({ members: rows });
+  } catch (e) {
+    return toErrorResponse(e);
+  }
+}
+
 // 邀请已注册用户进项目并指定项目内角色（仅项目导演）
 export async function POST(req: Request, { params }: Params) {
   try {

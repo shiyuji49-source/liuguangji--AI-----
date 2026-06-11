@@ -49,13 +49,21 @@ export default async function WalletPage() {
     <div className="space-y-6">
       <h1 className="text-lg">钱包</h1>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* 大数字 + 旋转渐变环统计卡（参考游戏面板 Your Statistic） */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">积分余额</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl text-primary">{balance.toLocaleString()}</div>
-            <p className="mt-1 text-xs text-muted-foreground">1 元 = 100 积分</p>
+          <CardContent className="flex flex-col items-center gap-3 py-8">
+            <div className="relative size-44">
+              {/* 渐变环：金→极光紫→青 旋转流动 */}
+              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,var(--gold-b),var(--aurora-a),var(--aurora-b),var(--gold-a),var(--gold-b))] opacity-90 blur-[10px] [animation:spin_12s_linear_infinite]" />
+              <div className="absolute inset-0 rounded-full bg-[conic-gradient(from_90deg,var(--gold-b),var(--aurora-a),var(--aurora-b),var(--gold-b))] [animation:spin_12s_linear_infinite]" />
+              <div className="absolute inset-[7px] flex flex-col items-center justify-center rounded-full bg-card">
+                <span className="text-xs text-muted-foreground">积分余额</span>
+                <span className="mt-1 text-3xl font-medium text-primary">
+                  {balance.toLocaleString()}
+                </span>
+                <span className="mt-1 text-[10px] text-muted-foreground">1 元 = 100 积分</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
         <Card>

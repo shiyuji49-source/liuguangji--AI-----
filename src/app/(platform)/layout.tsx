@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/auth-helpers";
 import { getBalance } from "@/lib/billing/charge";
 import { PLATFORM_ROLE_LABELS } from "@/lib/labels";
 import { RailNav, RailSignOut, type RailItem } from "@/components/rail-nav";
+import { MemberRail } from "@/components/member-rail";
 
 // 平台内页面全部依赖会话与 DB，禁止构建期预渲染
 export const dynamic = "force-dynamic";
@@ -72,6 +73,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           </header>
           <main className="min-w-0 flex-1 px-7 py-5">{children}</main>
         </div>
+
+        {/* 右侧成员头像 Rail（项目页显示） */}
+        <MemberRail />
       </div>
     </div>
   );
