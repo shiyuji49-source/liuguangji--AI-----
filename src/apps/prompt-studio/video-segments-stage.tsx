@@ -271,6 +271,21 @@ function SegmentCard({
               {stillCount} 静帧锚
             </Badge>
           )}
+          {segment.prompt && (
+            <Badge
+              variant="outline"
+              className={`px-1.5 py-0 text-[10px] ${
+                segment.prompt.length > 3000 ? "border-destructive/60 text-destructive" : ""
+              }`}
+              title={
+                segment.prompt.length > 3000
+                  ? "超出 3000 字符参考上限，建议删减背景/重复禁则（保留微表演与空间布局）"
+                  : undefined
+              }
+            >
+              {segment.prompt.length} 字
+            </Badge>
+          )}
           <span className={`ml-auto text-xs ${st.cls}`}>
             {busy && <Loader2 className="mr-1 inline size-3 animate-spin" />}
             {st.text}

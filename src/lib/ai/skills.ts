@@ -31,16 +31,19 @@ const SOURCES: Record<SkillKey, { dir?: string; file?: string; extras?: string[]
   // 镜头设计负责"怎么拆镜头/反应/运镜/调度"，静帧负责"挑哪些镜出图+怎么出"。
   镜头设计: { dir: "shot-design" },
   静帧: { dir: "storyboard-master" },
+  // 视频提示词蓝本（用户指定）：shotlist-builder.skill + Seedance2.0核心使用方案，仅此两份。
+  // SKILL.md 是两份的总结；shotlist-builder 七个 reference 全量注入；旧 seedance-video-prompt 弃用。
   视频: {
-    dir: "seedance-video-prompt",
-    // shotlist-builder 包的增益 references。全 skill 已统一写实派 + 多镜合并片段模型，
-    // STYLE_BLOCK（practicals-only）与 PROMPT_DENSITY（多镜合并分组）不再冲突，一并注入。
+    dir: "seedance-segment-prompt",
     extras: [
+      "shotlist-builder/reference/PROMPT_PATTERNS.md",
       "shotlist-builder/reference/MICRO_BEATS.md",
       "shotlist-builder/reference/CAMERA_EMOTION.md",
       "shotlist-builder/reference/SPATIAL_BLOCKING.md",
-      "shotlist-builder/reference/PROMPT_DENSITY.md",
       "shotlist-builder/reference/STYLE_BLOCK.md",
+      "shotlist-builder/reference/PROMPT_DENSITY.md",
+      "shotlist-builder/reference/PLAN_TYPES.md",
+      "seedance2.0资料/Seedance2.0核心使用方案-视频总结.md",
     ],
   },
 };
