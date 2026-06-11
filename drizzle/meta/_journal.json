@@ -43,6 +43,13 @@
       "when": 1781183028049,
       "tag": "0005_cultured_tigra",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781184966681,
+      "tag": "0006_perfect_freak",
+      "breakpoints": true
     }
   ]
 }

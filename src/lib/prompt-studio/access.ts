@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { shots } from "../db/schema";
+import { shots, videoSegments } from "../db/schema";
 import { AuthError, requireProjectMember } from "../auth-helpers";
 import { promptModesFor, ASSET_MODES, type PromptMode } from "@/apps/registry";
 import type { ProjectRole } from "../db/schema";
@@ -29,4 +29,13 @@ export async function loadShotChecked(id: string) {
   const ctx = await requireProjectMember(shot.projectId);
   assertWorkspaceAccess(ctx.projectRole, "静帧");
   return { shot, ...ctx };
+}
+
+/** 取视频片段并校验项目成员 + 视频工作区权限 */
+export async function loadSegmentChecked(id: string) {
+  const segment = await db.query.videoSegments.findFirst({ where: eq(videoSegments.id, id) });
+  if (!segment) throw new AuthError("该片段不存在", 404);
+  const ctx = await requireProjectMember(segment.projectId);
+  assertWorkspaceAccess(ctx.projectRole, "视频");
+  return { segment, ...ctx };
 }

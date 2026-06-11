@@ -296,6 +296,196 @@ function shotBrief(shot: ShotInfo): string {
   return lines.join("\n");
 }
 
+// ===== 阶段④：视频片段（多镜合并）——划分片段 + 逐片段生成 =====
+
+export type PlannedSegment = {
+  segmentNo: number;
+  label: string;
+  shotNos: number[];
+  durationSec: number | null;
+};
+
+const PLAN_MAX_OUT = 4000;
+const SEGMENT_MAX_OUT = 5000;
+
+function shotTableText(shots: ShotInfo[]): string {
+  return shots
+    .map(
+      (s) =>
+        `镜${s.shotNo}｜${s.sceneLabel}｜${s.shotType}/${s.cameraMove}｜${s.durationSec ?? "?"}s｜${s.summary}${s.dialogue ? `｜台词:${s.dialogue}` : ""}`
+    )
+    .join("\n");
+}
+
+/** 把整集分镜表按 skill 的片段划分规则（同场/同角色组/情绪连续/≤15s）分组 */
+export async function planSegments(opts: {
+  userId: string;
+  shots: ShotInfo[];
+  episodeNo: number;
+  spec: ProjectSpec;
+}): Promise<{ segments: PlannedSegment[]; credits: number }> {
+  const skill = getSkillPrompt("视频");
+  const note = buildRuntimeNote({
+    tier: opts.spec.tier,
+    aspect: opts.spec.aspect,
+    productionType: opts.spec.productionType,
+    styleGenre: opts.spec.styleGenre,
+    episode: opts.episodeNo,
+  });
+  const userText = [
+    `【任务】只做"片段划分"这一步，不写提示词：按 skill 的片段划分规则（同场景、同角色组、情绪/时间连续的相邻镜合并；每片段 ≤15 秒；跨场景硬切/角色进出场/独立情绪弧/道具插镜才拆分；文延武拼），把下面整集分镜表分组。`,
+    `每片段一条 JSON：{"segmentNo":序号,"label":"一句话标签（如 破庙对峙·拔刀缠斗）","shotNos":[相邻镜号],"durationSec":合计目标秒数(≤15)}`,
+    `镜号必须全部覆盖、不重复、保持原顺序相邻合并。只输出 JSON 数组，不要任何额外文字。`,
+    note,
+    `----- 第 ${opts.episodeNo} 集分镜表 -----`,
+    shotTableText(opts.shots),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const messages: ModelMessage[] = [
+    {
+      role: "system",
+      content: skill,
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    },
+    { role: "user", content: userText },
+  ];
+  const est = await estimateLlmMaxCredits(MODEL_MAIN(), skill.length + userText.length, PLAN_MAX_OUT);
+  await precheck(opts.userId, est);
+
+  const { text, usage, providerMetadata } = await generateText({
+    model: mainModel(),
+    messages,
+    maxOutputTokens: PLAN_MAX_OUT,
+    providerOptions: { anthropic: { metadata: { userId: opts.userId } } },
+  });
+  const { credits } = await chargeLlm({
+    userId: opts.userId,
+    model: MODEL_MAIN(),
+    usage: toLlmUsage(usage, providerMetadata as Record<string, Record<string, unknown>> | undefined),
+    ref: { appKey: "prompt-studio", note: `划分片段-第${opts.episodeNo}集` },
+  });
+
+  // 解析 + 防御：镜号去重、片段重编号
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf("[");
+  const end = t.lastIndexOf("]");
+  let segments: PlannedSegment[] = [];
+  if (start !== -1 && end !== -1) {
+    try {
+      const arr = JSON.parse(t.slice(start, end + 1));
+      if (Array.isArray(arr)) {
+        const seen = new Set<number>();
+        segments = arr
+          .filter((x) => x && Array.isArray(x.shotNos) && x.shotNos.length > 0)
+          .map((x, i) => ({
+            segmentNo: i + 1,
+            label: String(x.label ?? "").slice(0, 60),
+            shotNos: (x.shotNos as unknown[])
+              .map((n) => Number(n))
+              .filter((n) => Number.isFinite(n) && !seen.has(n) && (seen.add(n), true)),
+            durationSec: Number.isFinite(Number(x.durationSec))
+              ? Math.min(Number(x.durationSec), 15)
+              : null,
+          }))
+          .filter((s) => s.shotNos.length > 0)
+          .slice(0, 60);
+      }
+    } catch {
+      segments = [];
+    }
+  }
+  return { segments, credits };
+}
+
+/** 为一个片段（若干相邻镜）生成一条多镜合并的 Seedance 视频提示词 */
+export async function generateSegmentPrompt(opts: {
+  userId: string;
+  segment: PlannedSegment;
+  shots: ShotInfo[]; // 本片段的成员镜（按镜号序）
+  stillPrompts: { shotNo: number; prompt: string }[]; // 成员镜已有的静帧提示词（构图锚）
+  episodeContent?: string;
+  assetBriefs?: { name: string; brief: string }[];
+  spec: ProjectSpec;
+  refine?: string;
+}): Promise<{ promptText: string; credits: number; usage: LlmUsage }> {
+  const skill = getSkillPrompt("视频");
+  const note = buildRuntimeNote({
+    tier: opts.spec.tier,
+    aspect: opts.spec.aspect,
+    productionType: opts.spec.productionType,
+    styleGenre: opts.spec.styleGenre,
+    episode: opts.shots[0]?.episodeNo,
+  });
+
+  const parts: string[] = [];
+  if (opts.episodeContent) {
+    parts.push(`【本集剧本（背景参考）】\n${opts.episodeContent.slice(0, 40000)}`);
+  }
+  parts.push(
+    `【本片段（来自已确认的分镜表）】片段 ${opts.segment.segmentNo}：${opts.segment.label}\n目标总时长：${opts.segment.durationSec ?? 15} 秒（≤15）\n成员镜：\n${shotTableText(opts.shots)}`
+  );
+  if (opts.assetBriefs?.length) {
+    parts.push(
+      `【关联资产档案（@名与外观必须一致）】\n${opts.assetBriefs.map((a) => `${a.name}：${a.brief}`).join("\n")}`
+    );
+  }
+  if (opts.stillPrompts.length) {
+    parts.push(
+      `【成员镜静帧提示词（构图/光影锚参考）】\n${opts.stillPrompts
+        .map((s) => `镜${s.shotNo}：\n${s.prompt.slice(0, 3000)}`)
+        .join("\n\n")}`
+    );
+  }
+  parts.push(
+    [
+      `【任务】为本片段生成**一条**多镜合并的 Seedance 2.0 视频提示词（不是逐镜各一条）。严格遵守 skill 硬规则：`,
+      `1. 开头技术规格块：画幅用项目画幅、总时长 ${opts.segment.durationSec ?? 15} 秒、写实微电影质感（全片写实派 practicals-only，无风格派炫光）。`,
+      `2. @资产声明：@image1 起逐个声明（有静帧则静帧为构图锚），handle 顺序固定；多图参考≠首帧。`,
+      `3. ⚠️空间布局块（MAIN VIEW/位置/米数/朝向/遮挡/视线锁定）。`,
+      `4. 按时间码切片【镜头N】：成员镜逐一对应，每片写满五要素（运镜方式/画面构图(景别+起幅落幅)/人物动作(可观测身体语言+微表演)/对口型台词或环境音/光影+运镜细节），每片一镜一动。`,
+      `5. 切点守双对比（景别+机位性格都变）与 180° 轴线重锚定；插镜 0.3-0.5s 须因果动机+署名。`,
+      `6. 情绪曲线贯穿片段、几何递增；人物出镜句末加质量锚定语；收尾写「${opts.segment.durationSec ?? 15}秒。<画幅>。」`,
+      `7. 全文 ≤3000 字符、纯中文；输出前用八要素（主体/动作/场景/光影/镜头语言/风格/画质/约束）静默自查完整性——但不要把检查表写进输出，只输出提示词本身。`,
+    ].join("\n")
+  );
+  if (opts.refine) parts.push(`【额外要求】${opts.refine}`);
+  if (note) parts.push(note);
+  const userText = parts.join("\n\n");
+
+  const messages: ModelMessage[] = [
+    {
+      role: "system",
+      content: skill,
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    },
+    { role: "user", content: userText },
+  ];
+  const est = await estimateLlmMaxCredits(MODEL_MAIN(), skill.length + userText.length, SEGMENT_MAX_OUT);
+  await precheck(opts.userId, est);
+
+  const { text, usage, providerMetadata } = await generateText({
+    model: mainModel(),
+    messages,
+    maxOutputTokens: SEGMENT_MAX_OUT,
+    providerOptions: { anthropic: { metadata: { userId: opts.userId } } },
+  });
+  const u = toLlmUsage(usage, providerMetadata as Record<string, Record<string, unknown>> | undefined);
+  const { credits } = await chargeLlm({
+    userId: opts.userId,
+    model: MODEL_MAIN(),
+    usage: u,
+    ref: {
+      appKey: "prompt-studio",
+      note: `视频片段-第${opts.shots[0]?.episodeNo}集片段${opts.segment.segmentNo}`,
+    },
+  });
+  return { promptText: text.trim(), credits, usage: u };
+}
+
 export async function generateShotPrompt(opts: {
   userId: string;
   target: "still" | "video";

@@ -29,13 +29,14 @@ const SOURCES: Record<SkillKey, { dir?: string; file?: string; extras?: string[]
   静帧: { dir: "storyboard-master" },
   视频: {
     dir: "seedance-video-prompt",
-    // shotlist-builder 包的纯增益 references（微表演目录/运镜-情绪映射/空间布局方法论）。
-    // 其 STYLE_BLOCK（practicals-only 全局化）与 seedance 的 S·A/B 二分冲突、
-    // PROMPT_DENSITY（多镜合并）与一镜一提示词模型冲突——均不注入。
+    // shotlist-builder 包的增益 references。全 skill 已统一写实派 + 多镜合并片段模型，
+    // STYLE_BLOCK（practicals-only）与 PROMPT_DENSITY（多镜合并分组）不再冲突，一并注入。
     extras: [
       "shotlist-builder/reference/MICRO_BEATS.md",
       "shotlist-builder/reference/CAMERA_EMOTION.md",
       "shotlist-builder/reference/SPATIAL_BLOCKING.md",
+      "shotlist-builder/reference/PROMPT_DENSITY.md",
+      "shotlist-builder/reference/STYLE_BLOCK.md",
     ],
   },
 };

@@ -242,6 +242,35 @@ export const shots = pgTable(
   (t) => [uniqueIndex("shot_scope_idx").on(t.projectId, t.scriptId, t.episodeNo, t.shotNo)]
 );
 
+// ===== 视频片段（多镜合并）：一条提示词 = 一个 ≤15 秒片段，内含分镜表的若干相邻镜 =====
+export const videoSegments = pgTable(
+  "video_segments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    scriptId: uuid("script_id")
+      .notNull()
+      .references(() => scripts.id),
+    episodeNo: integer("episode_no").notNull(),
+    segmentNo: integer("segment_no").notNull(),
+    label: text("label").notNull().default(""), // 片段一句话标签
+    shotNos: jsonb("shot_nos").notNull(), // [2,3,4] 本片段包含的镜号（相邻、同场、情绪连续）
+    durationSec: integer("duration_sec"), // 目标时长（≤15）
+    prompt: text("prompt"),
+    state: text("state").$type<ShotPromptState>().notNull().default("empty"),
+    error: text("error"),
+    params: jsonb("params"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("segment_scope_idx").on(t.projectId, t.scriptId, t.episodeNo, t.segmentNo)]
+);
+
 // ===== P1 资产墙（按 §5 一次建全）=====
 export type AssetKind = "人物" | "服装" | "道具" | "场景" | "群演" | "静帧" | "视频";
 

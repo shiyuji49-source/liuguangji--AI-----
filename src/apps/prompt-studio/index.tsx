@@ -13,6 +13,7 @@ import type { ProjectRole, ProjectTier } from "@/lib/db/schema";
 import { AssetsStage } from "./assets-stage";
 import { ShotlistStage } from "./shotlist-stage";
 import { ShotPromptsStage } from "./shot-prompts-stage";
+import { VideoSegmentsStage, type VideoSegment } from "./video-segments-stage";
 import type { Shot } from "./types";
 
 type ScriptLite = { id: string; title: string; episodeCount: number };
@@ -53,6 +54,7 @@ export function PromptStudioApp({
   const [episodes, setEpisodes] = useState<EpisodeLite[]>([]);
   const [epNo, setEpNo] = useState<number | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
+  const [segments, setSegments] = useState<VideoSegment[]>([]); // 视频片段（多镜合并）
   const [batchBusy, setBatchBusy] = useState(false); // 批量生成中锁定剧本/集切换
 
   const needEpisode = stage !== "资产";
@@ -80,24 +82,28 @@ export function PromptStudioApp({
     })();
   }, [scriptId]);
 
-  // 选中集 → 加载该集分镜表（②③④共享）。AbortController 防过期响应覆盖新集数据
+  // 选中集 → 加载该集分镜表 + 视频片段（②③④共享）。AbortController 防过期响应覆盖新集数据
   const loadShots = useCallback(
     async (signal?: AbortSignal) => {
       if (!scriptId || !epNo) {
         setShots([]);
+        setSegments([]);
         return;
       }
       const q = new URLSearchParams({ projectId, scriptId, episodeNo: String(epNo) });
       try {
-        const res = await fetch(`/api/prompt-studio/shots?${q}`, { signal });
-        if (!res.ok) {
-          if (!signal?.aborted) setShots([]);
-          return;
-        }
-        const data = await res.json();
-        if (!signal?.aborted) setShots(data.shots);
+        const [shotsRes, segRes] = await Promise.all([
+          fetch(`/api/prompt-studio/shots?${q}`, { signal }),
+          fetch(`/api/prompt-studio/segments?${q}`, { signal }),
+        ]);
+        if (signal?.aborted) return;
+        setShots(shotsRes.ok ? (await shotsRes.json()).shots : []);
+        setSegments(segRes.ok ? (await segRes.json()).segments : []);
       } catch (e) {
-        if (!(e instanceof Error && e.name === "AbortError")) setShots([]);
+        if (!(e instanceof Error && e.name === "AbortError")) {
+          setShots([]);
+          setSegments([]);
+        }
       }
     },
     [projectId, scriptId, epNo]
@@ -116,7 +122,7 @@ export function PromptStudioApp({
   }
 
   const stillDone = shots.filter((s) => s.stillState === "done").length;
-  const videoDone = shots.filter((s) => s.videoState === "done").length;
+  const segDone = segments.filter((s) => s.state === "done").length;
 
   return (
     <div className="space-y-4">
@@ -154,7 +160,8 @@ export function PromptStudioApp({
         </span>
         <ChevronRight className="size-3" />
         <span className={stage === "视频" ? "text-primary" : ""}>
-          ④ 视频提示词{shots.length > 0 ? `（${videoDone}/${shots.length}）` : ""}
+          ④ 视频提示词（多镜合并片段）
+          {segments.length > 0 ? `（${segDone}/${segments.length} 片段）` : ""}
         </span>
       </div>
 
@@ -242,11 +249,13 @@ export function PromptStudioApp({
             ))}
           {stage === "视频" &&
             (epNo ? (
-              <ShotPromptsStage
-                target="video"
+              <VideoSegmentsStage
+                projectId={projectId}
+                scriptId={scriptId}
+                episodeNo={epNo}
                 shots={shots}
-                onShotsChange={setShots}
-                tier={projectTier}
+                segments={segments}
+                onSegmentsChange={setSegments}
                 onBusyChange={setBatchBusy}
               />
             ) : (
