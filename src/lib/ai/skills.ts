@@ -19,7 +19,7 @@ export type SkillKey =
 
 const SKILL_ROOT = path.join(process.cwd(), "docs", "鎏光智绘提示词SKILL");
 
-const SOURCES: Record<SkillKey, { dir?: string; file?: string }> = {
+const SOURCES: Record<SkillKey, { dir?: string; file?: string; extras?: string[] }> = {
   "script-doctor": { dir: "script-revision" },
   人物: { file: "人物提示词SKILL.md" },
   服装: { file: "服装提示词SKILL.md" },
@@ -27,7 +27,17 @@ const SOURCES: Record<SkillKey, { dir?: string; file?: string }> = {
   群演: { file: "群演提示词SKILL.md" },
   场景: { dir: "scene-prompt-generator" },
   静帧: { dir: "storyboard-master" },
-  视频: { dir: "seedance-video-prompt" },
+  视频: {
+    dir: "seedance-video-prompt",
+    // shotlist-builder 包的纯增益 references（微表演目录/运镜-情绪映射/空间布局方法论）。
+    // 其 STYLE_BLOCK（practicals-only 全局化）与 seedance 的 S·A/B 二分冲突、
+    // PROMPT_DENSITY（多镜合并）与一镜一提示词模型冲突——均不注入。
+    extras: [
+      "shotlist-builder/reference/MICRO_BEATS.md",
+      "shotlist-builder/reference/CAMERA_EMOTION.md",
+      "shotlist-builder/reference/SPATIAL_BLOCKING.md",
+    ],
+  },
 };
 
 const cache = new Map<SkillKey, string>();
@@ -53,9 +63,15 @@ export function getSkillPrompt(key: SkillKey): string {
   const hit = cache.get(key);
   if (hit) return hit;
   const src = SOURCES[key];
-  const text = src.dir
+  let text = src.dir
     ? loadDirSkill(src.dir)
     : readFileSync(path.join(SKILL_ROOT, src.file!), "utf8");
+  for (const extra of src.extras ?? []) {
+    const p = path.join(SKILL_ROOT, extra);
+    if (existsSync(p)) {
+      text += `\n\n---\n\n<!-- extra reference: ${extra} -->\n\n${readFileSync(p, "utf8")}`;
+    }
+  }
   if (!text.trim()) throw new Error(`skill 文件为空：${key}`);
   cache.set(key, text);
   return text;

@@ -227,6 +227,8 @@ export async function buildShotlist(opts: {
   const userText = [
     `【任务】只做分镜表（shotlist）构建这一步，不写静帧提示词：按你 skill 中「关键帧筛选与合并」的规则，把下面这一集拆成镜头列表。`,
     `每镜一条 JSON：{"shotNo":序号,"sceneLabel":"场（如 3-1 破庙外·黄昏）","summary":"画面/动作摘要","shotType":"景别","cameraMove":"运镜","dialogue":"台词或声音（无则空串）","durationSec":预估秒数或null,"assetRefs":["@资产名"...],"needStill":是否值得出静帧}`,
+    `shotType 用规范景别词：远景/全景/中景/中近景/近景/特写/大特写/微距。cameraMove 写具体运镜（固定/手持呼吸/缓慢推近/拉远/横移/摇/升降/俯拍冻结等），禁写 zoom。`,
+    `durationSec 按镜头类型估：闪现建立镜头 1 秒内；单句台词 3-7；无台词反应（带情绪弧）5-10；插入/空镜 1-2；情绪特写完整弧 8-15。单镜不超过 15 秒。`,
     `needStill 按 skill 的静帧取舍分级规则判断（当前项目分级见下方项目设定）。`,
     opts.knownAssets.length
       ? `assetRefs 里的资产名尽量对齐项目已建档资产：${opts.knownAssets.join("、")}（出现了清单外的重要资产也可以写新 @名）。`
