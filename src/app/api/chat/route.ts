@@ -28,6 +28,9 @@ const bodySchema = z.object({
     .object({
       episode: z.union([z.string(), z.number()]).optional(),
       aspect: z.string().max(20).optional(),
+      // 剧本医生：项目级剧本注入（scope = "full" 全剧 | 集号）
+      scriptId: z.string().uuid().optional(),
+      scope: z.union([z.literal("full"), z.number().int().positive()]).optional(),
       docs: z
         .array(z.object({ name: z.string().max(200), text: z.string().max(900_000) }))
         .max(5)
@@ -206,17 +209,52 @@ export async function POST(req: Request) {
     }
 
     const skillText = getSkillPrompt(skillKey);
+
+    // 项目级剧本注入（仅剧本医生）：全剧=独立缓存块（与 skill 同享前缀缓存）；单集=轻量注入
+    let scriptBlock = "";
+    let scopeEpisode: number | undefined;
+    if (app.key === "script-doctor" && params.scriptId) {
+      const { loadScriptForDirector } = await import("@/lib/scripts/access");
+      const { scriptEpisodes } = await import("@/lib/db/schema");
+      const { asc: ascFn } = await import("drizzle-orm");
+      const script = await loadScriptForDirector(params.scriptId);
+      if (script.projectId !== conv.projectId) throw new AuthError("剧本不属于该项目", 403);
+
+      if (params.scope === "full" || params.scope === undefined) {
+        const eps = await db
+          .select()
+          .from(scriptEpisodes)
+          .where(eq(scriptEpisodes.scriptId, script.id))
+          .orderBy(ascFn(scriptEpisodes.episodeNo));
+        scriptBlock =
+          `【项目剧本《${script.title}》全剧 · 共 ${eps.length} 集】\n\n` +
+          eps
+            .map((e) => `=== 第 ${e.episodeNo} 集${e.title ? ` · ${e.title}` : ""} ===\n\n${e.content}`)
+            .join("\n\n");
+      } else {
+        scopeEpisode = params.scope;
+        const episode = await db.query.scriptEpisodes.findFirst({
+          where: and(
+            eq(scriptEpisodes.scriptId, script.id),
+            eq(scriptEpisodes.episodeNo, params.scope)
+          ),
+        });
+        if (!episode) throw new AuthError("该集不存在", 404);
+        scriptBlock = `【项目剧本《${script.title}》第 ${episode.episodeNo} 集${episode.title ? ` · ${episode.title}` : ""}】\n\n${episode.content}`;
+      }
+    }
+
     const runtimeNote = buildRuntimeNote({
       tier: project.tier,
       aspect: params.aspect,
-      episode: params.episode,
+      episode: scopeEpisode ?? params.episode,
     });
 
     // 2) 预检（按上限估：全部输入按未命中缓存计 + 最大输出）；通过后才写库
     const isHeavy = app.key === "script-doctor";
     const maxOutputTokens = isHeavy ? MAX_OUTPUT.heavy : MAX_OUTPUT.main;
     const modelName = modelNameForApp(app.key);
-    let inputChars = skillText.length + runtimeNote.length;
+    let inputChars = skillText.length + scriptBlock.length + runtimeNote.length;
     let imageCount = 0;
     for (const r of rows) {
       inputChars += r.content.length;
@@ -246,13 +284,31 @@ export async function POST(req: Request) {
     const history = rows.map((r) =>
       rowToModelMessage({ role: r.role, content: r.content, attachments: r.attachments })
     );
+
+    // 运行时附注贴在最后一条用户消息上（发送时拼接，不入库）：
+    // 既保证 system 块字节稳定（缓存前缀不被参数变化打破），
+    // 也规避乐奇部分上游对多 system 块的丢弃问题
+    if (runtimeNote) {
+      const last = history[history.length - 1];
+      if (last.role === "user") {
+        if (typeof last.content === "string") {
+          last.content = `${last.content}\n\n${runtimeNote}`;
+        } else if (Array.isArray(last.content)) {
+          const textPart = [...last.content].reverse().find((p) => p.type === "text");
+          if (textPart && "text" in textPart) textPart.text = `${textPart.text}\n\n${runtimeNote}`;
+        }
+      }
+    }
+
+    // 单一 system 块（skill + 项目剧本）+ 单缓存断点。
+    // 不拆多块：实测乐奇部分上游只保留单 system 块，多块会丢失 skill。
+    const systemText = scriptBlock ? `${skillText}\n\n${"=".repeat(20)}\n\n${scriptBlock}` : skillText;
     const modelMessages: ModelMessage[] = [
       {
         role: "system",
-        content: skillText,
+        content: systemText,
         providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
       },
-      ...(runtimeNote ? [{ role: "system" as const, content: runtimeNote }] : []),
       ...history,
     ];
 

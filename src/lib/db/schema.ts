@@ -109,7 +109,7 @@ export const messages = pgTable(
   (t) => [index("msg_conv_idx").on(t.conversationId, t.createdAt)]
 );
 
-export type ArtifactType = "剧本" | "资产清单" | "资产提示词" | "静帧提示词" | "视频提示词";
+export type ArtifactType = "剧本" | "诊断报告" | "资产清单" | "资产提示词" | "静帧提示词" | "视频提示词";
 
 export const artifacts = pgTable(
   "artifacts",
@@ -127,6 +127,42 @@ export const artifacts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("artifact_project_idx").on(t.projectId, t.type)]
+);
+
+// ===== 项目剧本（剧本医生工作台：剧本住在项目里，上传一次贯穿全程）=====
+export const scripts = pgTable(
+  "scripts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    title: text("title").notNull(),
+    filename: text("filename").notNull(),
+    episodeCount: integer("episode_count").notNull(),
+    totalChars: integer("total_chars").notNull(),
+    warnings: jsonb("warnings"), // 分集时的提示（如未发现分集标记）
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("script_project_idx").on(t.projectId, t.createdAt)]
+);
+
+export const scriptEpisodes = pgTable(
+  "script_episodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scriptId: uuid("script_id")
+      .notNull()
+      .references(() => scripts.id),
+    episodeNo: integer("episode_no").notNull(),
+    title: text("title").notNull().default(""),
+    content: text("content").notNull(),
+    chars: integer("chars").notNull(),
+  },
+  (t) => [index("episode_script_idx").on(t.scriptId, t.episodeNo)]
 );
 
 // ===== P1 资产墙（按 §5 一次建全）=====

@@ -60,6 +60,7 @@ export function ChatWorkspace({
   artifactTypes,
   placeholder,
   prefill,
+  autoSend,
 }: {
   appKey: string;
   projectId: string;
@@ -72,6 +73,8 @@ export function ChatWorkspace({
   placeholder?: string;
   /** 跨应用带入（仅「资产清单→提示词生成器」）：nonce 变化时把 text 填进输入框 */
   prefill?: { text: string; nonce: number } | null;
+  /** 快捷操作：nonce 变化时把 text 作为消息直接发送（如「通读诊断」按钮） */
+  autoSend?: { text: string; nonce: number } | null;
 }) {
   const router = useRouter();
   const [convs, setConvs] = useState<Conversation[]>([]);
@@ -98,7 +101,6 @@ export function ChatWorkspace({
     return `/api/conversations?${q}`;
   }, [projectId, appKey, mode]);
 
-  /* eslint-disable react-hooks/refs -- prepareSendMessagesRequest 仅在发送请求时执行，不在渲染期读取 ref */
   const [transport] = useState(
     () =>
       new DefaultChatTransport({
@@ -116,7 +118,6 @@ export function ChatWorkspace({
         }),
       })
   );
-  /* eslint-enable react-hooks/refs */
 
   const { messages, setMessages, sendMessage, regenerate, status } = useChat({
     id: activeId ?? "pending",
@@ -172,8 +173,12 @@ export function ChatWorkspace({
     return data.conversation as Conversation;
   }, [projectId, appKey, mode, fetchConvs]);
 
-  // 初始化：取会话列表，选中最新一条
+  // 初始化：取会话列表，选中最新一条；为空则先建一个，
+  // 保证首次发送前 useChat 的 id 已稳定（否则流式输出落在旧实例上不可见）
+  const initRef = useRef(false);
   useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
     let cancelled = false;
     (async () => {
       const list = await fetchConvs();
@@ -182,23 +187,37 @@ export function ChatWorkspace({
         setActiveId(list[0].id);
         await syncMessages(list[0].id);
       } else {
-        setActiveId(null);
-        setMessages([]);
+        const conv = await createConv();
+        if (!cancelled && conv) {
+          setActiveId(conv.id);
+          setMessages([]);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [fetchConvs, syncMessages, setMessages]);
+  }, [fetchConvs, syncMessages, setMessages, createConv]);
 
-  // 带入资产清单（唯一跨应用带入）
-  const lastNonce = useRef(0);
+  // 带入资产清单（唯一跨应用带入）。nonce 守卫以挂载时的值初始化：
+  // 重挂载（HMR/切换工作区 key）时不得重放父组件里残留的旧信号
+  const lastNonce = useRef(prefill?.nonce ?? 0);
   useEffect(() => {
     if (prefill && prefill.nonce !== lastNonce.current) {
       lastNonce.current = prefill.nonce;
       setInput((v) => (v ? `${v}\n\n${prefill.text}` : prefill.text));
     }
   }, [prefill]);
+
+  // 快捷操作直接发送（同上，仅响应挂载后的新信号）
+  const lastAutoSendNonce = useRef(autoSend?.nonce ?? 0);
+  useEffect(() => {
+    if (autoSend && autoSend.nonce !== lastAutoSendNonce.current) {
+      lastAutoSendNonce.current = autoSend.nonce;
+      void handleSend(autoSend.text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSend 每次渲染都是新引用，仅以 nonce 为触发信号
+  }, [autoSend]);
 
   async function selectConv(id: string) {
     if (busy) return;
@@ -228,14 +247,17 @@ export function ChatWorkspace({
         setActiveId(list[0].id);
         await syncMessages(list[0].id);
       } else {
-        setActiveId(null);
-        setMessages([]);
+        const conv = await createConv();
+        if (conv) {
+          setActiveId(conv.id);
+          setMessages([]);
+        }
       }
     }
   }
 
-  async function handleSend() {
-    const text = input.trim();
+  async function handleSend(textOverride?: string) {
+    const text = (textOverride ?? input).trim();
     if (!text && docs.length === 0 && images.length === 0) return;
     if (busy) return;
 

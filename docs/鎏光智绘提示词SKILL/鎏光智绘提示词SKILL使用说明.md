@@ -57,7 +57,7 @@
 
 | 中文文件夹（俗称） | frontmatter name（技术 ID） | 谁用 | 阶段 | 产出 |
 |---|---|---|---|---|
-| 剧本医生 | `script-revision` | 编剧/导演 | 剧本（分镜前置） | 影视化剧本 + **资产清单** + 环境音线索 |
+| 剧本医生 | `script-revision` | 编剧/导演 | 剧本（分镜前置） | 影视化剧本 + **资产清单** + 环境音线索 + **连贯性诊断（制作/剪辑）** |
 | 人物主图 | `character-asset-prompt-generator` | 美术（人物） | 资产 | 人物面部定妆照提示词 |
 | 服装设计卡 | `costume-design-card-prompt-generator` | 美术（服装） | 资产 | 无脸假人服装卡提示词 |
 | 道具展示图 | `prop-display-prompt-generator` | 美术（道具） | 资产 | 道具档案图提示词 |
