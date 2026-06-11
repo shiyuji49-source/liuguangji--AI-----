@@ -69,7 +69,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       <ProjectScripts projectId={project.id} canWrite={isDirector} />
 
       <section className="space-y-3">
-        <h2 className="text-sm text-muted-foreground">应用（顺序自由，剧本医生非必经）</h2>
+        <h2 className="text-sm text-muted-foreground">应用</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {APPS.filter((a) => visibleKeys.has(a.key)).map((app) => {
             const live = isAppLive(app);

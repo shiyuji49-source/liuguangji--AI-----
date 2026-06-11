@@ -157,7 +157,7 @@ export function VideoSegmentsStage({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
         <Button size="sm" className="h-8" onClick={() => plan(false)} disabled={planning || !!batch}>
           {planning ? <Loader2 className="size-3.5 animate-spin" /> : <Scissors className="size-3.5" />}
           {segments.length > 0 ? "重新划分片段" : "划分片段"}
@@ -252,7 +252,7 @@ function SegmentCard({
   }
 
   return (
-    <Card>
+    <Card className={busy ? "card-generating" : ""}>
       <CardContent className="space-y-2 pt-4">
         <div className="flex flex-wrap items-center gap-2">
           <Film className="size-3.5 text-primary" />

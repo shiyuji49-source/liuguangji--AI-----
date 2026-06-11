@@ -72,7 +72,7 @@ export default async function WalletPage() {
 
       <section className="space-y-3">
         <h2 className="text-sm text-muted-foreground">积分流水（最近 200 条）</h2>
-        <div className="rounded-[10px] border border-border bg-card">
+        <div className="rounded-lg border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>

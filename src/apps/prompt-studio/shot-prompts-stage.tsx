@@ -118,7 +118,7 @@ export function ShotPromptsStage({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
         <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch}>
           {batch ? (
             <>
@@ -207,7 +207,7 @@ function ShotPromptCard({
   }
 
   return (
-    <Card>
+    <Card className={busy ? "card-generating" : ""}>
       <CardContent className="space-y-2 pt-4">
         <div className="flex items-center gap-2">
           {target === "still" ? (

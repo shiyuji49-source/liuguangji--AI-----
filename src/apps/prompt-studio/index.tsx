@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Wand2, FolderOpen, ChevronRight } from "lucide-react";
+import { Wand2, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -147,22 +147,58 @@ export function PromptStudioApp({
         </Tabs>
       </div>
 
-      {/* 流水线提示条 */}
-      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        <span className={stage === "资产" ? "text-primary" : ""}>① 提取资产 → 资产提示词</span>
-        <ChevronRight className="size-3" />
-        <span className={stage === "分镜表" ? "text-primary" : ""}>
-          ② 构建分镜表{shots.length > 0 && epNo ? `（${shots.length} 镜）` : ""}
-        </span>
-        <ChevronRight className="size-3" />
-        <span className={stage === "静帧" ? "text-primary" : ""}>
-          ③ 静帧提示词{shots.length > 0 ? `（${stillDone}/${shots.filter((s) => s.needStill).length}）` : ""}
-        </span>
-        <ChevronRight className="size-3" />
-        <span className={stage === "视频" ? "text-primary" : ""}>
-          ④ 视频提示词（多镜合并片段）
-          {segments.length > 0 ? `（${segDone}/${segments.length} 片段）` : ""}
-        </span>
+      {/* 流水线：发光节点 + 流动金连线 */}
+      <div className="flex flex-wrap items-center gap-0 text-xs">
+        {(
+          [
+            { key: "资产", label: "提取资产 → 资产提示词", info: "" },
+            {
+              key: "分镜表",
+              label: "构建分镜表",
+              info: shots.length > 0 && epNo ? `${shots.length} 镜` : "",
+            },
+            {
+              key: "静帧",
+              label: "静帧提示词",
+              info:
+                shots.length > 0 ? `${stillDone}/${shots.filter((s) => s.needStill).length}` : "",
+            },
+            {
+              key: "视频",
+              label: "视频提示词 · 多镜合并",
+              info: segments.length > 0 ? `${segDone}/${segments.length} 片段` : "",
+            },
+          ] as { key: PromptStage; label: string; info: string }[]
+        ).map((s, i, arr) => {
+          const active = stage === s.key;
+          return (
+            <div key={s.key} className="flex items-center">
+              <button
+                onClick={() => stages.includes(s.key) && setStage(s.key)}
+                className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 transition-all duration-200 ${
+                  active
+                    ? "border-primary/50 bg-primary/10 text-foreground shadow-[0_0_18px_-4px_var(--glow-gold)]"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span
+                  className={`flex size-4.5 items-center justify-center rounded-full text-[10px] font-medium transition-all ${
+                    active
+                      ? "bg-[linear-gradient(135deg,var(--gold-a),var(--gold-c))] text-primary-foreground shadow-[0_0_10px_var(--glow-gold)]"
+                      : "bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <span>{s.label}</span>
+                {s.info && <span className={active ? "text-primary" : "opacity-60"}>{s.info}</span>}
+              </button>
+              {i < arr.length - 1 && (
+                <div className={`h-px w-6 sm:w-10 ${active ? "liuguang-line" : "bg-border"}`} />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {scripts !== null && scripts.length === 0 ? (

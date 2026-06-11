@@ -157,7 +157,7 @@ export function AssetsStage({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
         <Button size="sm" className="h-8" onClick={extract} disabled={extracting || !scriptId}>
           {extracting ? <Loader2 className="size-3.5 animate-spin" /> : <ListPlus className="size-3.5" />}
           提取资产（全剧）

@@ -68,7 +68,7 @@ export function PricingTable({
       <p className="text-xs text-muted-foreground">
         1 元 = 100 积分（固定）。所有单价存数据库，修改后约 30 秒内对新请求生效。
       </p>
-      <div className="rounded-[10px] border border-border bg-card">
+      <div className="rounded-lg border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>

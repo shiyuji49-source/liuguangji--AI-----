@@ -35,6 +35,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -48,66 +49,230 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* 鎏光机设计 tokens（规划书 §12）：暗色影视级，唯一点缀色鎏光金。全站固定暗色，无浅色模式。 */
+/* ============================================================
+   鎏光机设计系统 v2 — 高级 · 未来感 · 活力 · 流动
+   品牌即语言：鎏光 = 流动的金色光。
+   深蓝黑底上铺环境光晕（金 + 极光），活跃元素发光，
+   品牌字/主按钮/进度采用流动金渐变，生成中状态呼吸光。
+   全站固定暗色，无浅色模式。
+   ============================================================ */
 :root,
 .dark {
-  --background: #0e0f12;
-  --foreground: #e8e6e1;
-  --card: #16181d;
-  --card-foreground: #e8e6e1;
-  --popover: #16181d;
-  --popover-foreground: #e8e6e1;
-  --primary: #c9a86a;
-  --primary-hover: #e0c589;
-  --primary-foreground: #0e0f12;
-  --secondary: #1c1f26;
-  --secondary-foreground: #e8e6e1;
-  --muted: #1c1f26;
-  --muted-foreground: #8b8f99;
-  --accent: #1c1f26;
-  --accent-foreground: #e8e6e1;
-  --destructive: #b3554e;
-  --border: #262a33;
-  --input: #262a33;
-  --ring: #c9a86a;
-  --chart-1: #c9a86a;
-  --chart-2: #8b8f99;
-  --chart-3: #5c6170;
-  --chart-4: #3a3f4b;
-  --chart-5: #262a33;
-  --radius: 0.625rem; /* 10px */
-  --sidebar: #16181d;
-  --sidebar-foreground: #e8e6e1;
-  --sidebar-primary: #c9a86a;
-  --sidebar-primary-foreground: #0e0f12;
-  --sidebar-accent: #1c1f26;
-  --sidebar-accent-foreground: #e8e6e1;
-  --sidebar-border: #262a33;
-  --sidebar-ring: #c9a86a;
+  --background: #07080d;
+  --foreground: #eceae1;
+  --card: #10131b;
+  --card-foreground: #eceae1;
+  --popover: #131722;
+  --popover-foreground: #eceae1;
+  --primary: #d8b173;
+  --primary-hover: #ecd9a8;
+  --primary-foreground: #14100a;
+  --secondary: #181c27;
+  --secondary-foreground: #eceae1;
+  --muted: #161a24;
+  --muted-foreground: #97a0b4;
+  --accent: #1a1f2c;
+  --accent-foreground: #f0eee8;
+  --destructive: #e16a62;
+  --border: #222837;
+  --input: #242a3a;
+  --ring: #d8b173;
+  --chart-1: #d8b173;
+  --chart-2: #8b95ff;
+  --chart-3: #4fd1c5;
+  --chart-4: #5c6580;
+  --chart-5: #2c3344;
+  --radius: 0.875rem; /* 14px：更松弛现代 */
+  --sidebar: #10131b;
+  --sidebar-foreground: #eceae1;
+  --sidebar-primary: #d8b173;
+  --sidebar-primary-foreground: #14100a;
+  --sidebar-accent: #181c27;
+  --sidebar-accent-foreground: #eceae1;
+  --sidebar-border: #222837;
+  --sidebar-ring: #d8b173;
   --font-sans: "MiSans", "MiSans VF", "Source Han Sans SC", "Noto Sans SC",
     "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-geist-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* 鎏光金三阶 + 光晕 + 极光（生成中/进行态的能量色） */
+  --gold-a: #f4dfa6;
+  --gold-b: #d8b173;
+  --gold-c: #9a743c;
+  --glow-gold: rgba(216, 177, 115, 0.22);
+  --aurora-a: #8b95ff;
+  --aurora-b: #4fd1c5;
+  --glow-aurora: rgba(139, 149, 255, 0.16);
 }
 
-@theme inline {
-  --color-primary-hover: var(--primary-hover);
+/* ---------- 流动与呼吸 ---------- */
+@keyframes liuguang-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+@keyframes breath-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(139, 149, 255, 0.35), 0 0 18px var(--glow-aurora);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(79, 209, 197, 0.45), 0 0 30px rgba(79, 209, 197, 0.2);
+  }
+}
+@keyframes ambient-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(2%, 1.5%, 0);
+  }
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    transition-duration: 150ms; /* §12 动效 150–200ms 微过渡 */
-  }
-  body {
-    @apply bg-background text-foreground;
-    font-weight: 300; /* 细字重 */
-    font-variant-numeric: tabular-nums; /* 等宽数字 */
   }
   html {
     @apply font-sans;
     color-scheme: dark;
   }
-  strong, b, h1, h2, h3, h4 {
+  body {
+    @apply bg-background text-foreground;
+    font-weight: 300; /* 细字重 */
+    font-variant-numeric: tabular-nums; /* 等宽数字 */
+    min-height: 100vh;
+  }
+  /* 环境光晕：金色辐射（左上）+ 极光辐射（右下），固定铺底，缓慢漂移 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -10%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(42% 36% at 12% -4%, rgba(216, 177, 115, 0.09), transparent 70%),
+      radial-gradient(50% 42% at 96% 108%, rgba(139, 149, 255, 0.07), transparent 70%),
+      radial-gradient(36% 30% at 78% -8%, rgba(79, 209, 197, 0.04), transparent 70%);
+    animation: ambient-drift 24s ease-in-out infinite;
+  }
+  strong,
+  b,
+  h1,
+  h2,
+  h3,
+  h4 {
     font-weight: 500;
+  }
+  h1 {
+    letter-spacing: 0.02em;
+  }
+  /* 细滚动条 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #262d3e;
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #343d54;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* 流动金渐变文字（品牌字/重点字） */
+  .text-liuguang {
+    background: linear-gradient(
+      90deg,
+      var(--gold-c),
+      var(--gold-a) 30%,
+      var(--gold-b) 55%,
+      var(--gold-a) 80%,
+      var(--gold-c)
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: liuguang-flow 6s linear infinite;
+  }
+
+  /* 流动金细条（进度/分隔的能量线） */
+  .liuguang-line {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--gold-c),
+      var(--gold-a),
+      var(--gold-b),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: liuguang-flow 4s linear infinite;
+  }
+
+  /* 玻璃表面（顶栏/操作条） */
+  .glass {
+    background: rgba(13, 16, 24, 0.66);
+    backdrop-filter: blur(18px) saturate(1.3);
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+
+  /* 生成中：极光呼吸边 */
+  .card-generating {
+    animation: breath-glow 2.2s ease-in-out infinite;
+    border-color: transparent !important;
+  }
+
+  /* 卡片：顶部内高光 + 悬浮反馈（链接卡/可点卡自动上浮发光） */
+  [data-slot="card"] {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 36%);
+    transition:
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.22s ease,
+      box-shadow 0.22s ease;
+  }
+  a > [data-slot="card"]:hover,
+  [data-slot="card"].cursor-pointer:hover {
+    transform: translateY(-3px);
+    border-color: rgba(216, 177, 115, 0.45);
+    box-shadow:
+      0 14px 36px -16px rgba(0, 0, 0, 0.7),
+      0 0 0 1px rgba(216, 177, 115, 0.16),
+      0 0 28px -6px var(--glow-gold);
+  }
+
+  /* 激活态 Tab：金字 + 光晕浮起 */
+  [data-slot="tabs-trigger"][data-state="active"] {
+    color: var(--gold-a) !important;
+    box-shadow:
+      0 0 0 1px rgba(216, 177, 115, 0.28),
+      0 4px 18px -6px var(--glow-gold);
+    background: linear-gradient(180deg, rgba(216, 177, 115, 0.12), rgba(216, 177, 115, 0.04)) !important;
+  }
+  [data-slot="tabs-trigger"] {
+    transition: color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+
+  /* 输入聚焦：金环呼吸 */
+  [data-slot="input"]:focus-visible,
+  [data-slot="textarea"]:focus-visible {
+    border-color: rgba(216, 177, 115, 0.55);
+    box-shadow: 0 0 0 3px rgba(216, 177, 115, 0.13), 0 0 22px -6px var(--glow-gold);
+  }
+
+  /* 表格行 hover 微提亮 */
+  [data-slot="table-row"]:hover {
+    background: rgba(255, 255, 255, 0.025);
   }
 }

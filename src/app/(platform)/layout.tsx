@@ -15,9 +15,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
+      <header className="glass sticky top-0 z-40 border-b">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4">
-          <Link href="/projects" className="text-base tracking-[0.25em] text-primary">
+          <Link href="/projects" className="text-liuguang text-base font-medium tracking-[0.3em]">
             鎏光机
           </Link>
           <nav className="flex items-center gap-4 text-sm text-muted-foreground">

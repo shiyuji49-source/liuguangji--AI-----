@@ -58,7 +58,7 @@ export function UsersTable({ users }: { users: Row[] }) {
 
   return (
     <>
-      <div className="rounded-[10px] border border-border bg-card">
+      <div className="rounded-lg border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>

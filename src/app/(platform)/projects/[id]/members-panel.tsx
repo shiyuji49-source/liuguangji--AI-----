@@ -126,7 +126,7 @@ export function MembersPanel({
           </Dialog>
         )}
       </div>
-      <div className="rounded-[10px] border border-border bg-card">
+      <div className="rounded-lg border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>

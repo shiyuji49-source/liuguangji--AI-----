@@ -112,7 +112,7 @@ export function ShotlistStage({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
         <Button size="sm" className="h-8" onClick={() => build(false)} disabled={building}>
           {building ? <Loader2 className="size-3.5 animate-spin" /> : <Clapperboard className="size-3.5" />}
           {shots.length > 0 ? "重新构建分镜表" : "构建分镜表"}
@@ -137,7 +137,7 @@ export function ShotlistStage({
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-[10px] border border-border bg-card">
+        <div className="rounded-lg border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>

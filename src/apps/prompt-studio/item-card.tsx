@@ -53,7 +53,7 @@ export function PromptItemCard({
   const hasText = !!item.promptText;
 
   return (
-    <Card>
+    <Card className={busy ? "card-generating" : ""}>
       <CardContent className="space-y-2 pt-4">
         <div className="flex items-center gap-2">
           <button onClick={() => setExpanded((v) => !v)} className="text-muted-foreground">
