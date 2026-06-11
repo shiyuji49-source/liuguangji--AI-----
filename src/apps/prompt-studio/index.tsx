@@ -16,6 +16,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChatWorkspace } from "@/components/chat/chat-workspace";
+import { ProjectContextBadges } from "@/components/project-context-badges";
 import { promptModesFor, ASSET_MODES, type PromptMode } from "@/apps/registry";
 import type { ProjectRole, ProjectTier } from "@/lib/db/schema";
 
@@ -37,12 +38,16 @@ export function PromptStudioApp({
   projectName,
   projectTier,
   projectAspect,
+  projectProductionType,
+  projectStyleGenre,
   projectRole,
 }: {
   projectId: string;
   projectName: string;
   projectTier: ProjectTier;
   projectAspect: string;
+  projectProductionType: string;
+  projectStyleGenre: string;
   projectRole: ProjectRole;
   userId: string;
 }) {
@@ -70,6 +75,8 @@ export function PromptStudioApp({
   const [scriptId, setScriptId] = useState<string | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeLite[]>([]);
   const [epNo, setEpNo] = useState<number | null>(null);
+  // 资产工作区：项目里可带入的资产清单数量
+  const [assetListCount, setAssetListCount] = useState<number | null>(null);
 
   const loadScripts = useCallback(async () => {
     const res = await fetch(`/api/projects/${projectId}/scripts`);
@@ -82,8 +89,17 @@ export function PromptStudioApp({
   useEffect(() => {
     (async () => {
       if (workspace === "静帧") await loadScripts();
+      if (workspace === "资产") {
+        const res = await fetch(
+          `/api/artifacts?projectId=${projectId}&type=${encodeURIComponent("资产清单")}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setAssetListCount(data.artifacts.length);
+        }
+      }
     })();
-  }, [workspace, loadScripts]);
+  }, [workspace, loadScripts, projectId]);
 
   useEffect(() => {
     (async () => {
@@ -123,6 +139,12 @@ export function PromptStudioApp({
         <Wand2 className="size-4 text-primary" />
         <h1 className="text-base">提示词生成器</h1>
         <span className="text-xs text-muted-foreground">{projectName}</span>
+        <ProjectContextBadges
+          tier={projectTier}
+          aspect={projectAspect}
+          productionType={projectProductionType}
+          styleGenre={projectStyleGenre}
+        />
         <Tabs value={workspace} onValueChange={(v) => setWorkspace(v as Workspace)} className="ml-auto">
           <TabsList>
             {workspaces.map((w) => (
@@ -204,12 +226,23 @@ export function PromptStudioApp({
                 </SelectContent>
               </Select>
             </label>
-            <span className="text-xs text-muted-foreground">分级 {projectTier}</span>
+            {aspect !== projectAspect ? (
+              <span className="text-xs text-primary">已临时覆盖项目画幅 {projectAspect}</span>
+            ) : (
+              <span className="text-xs text-muted-foreground">画幅随项目默认</span>
+            )}
 
             <div className="ml-auto flex items-center gap-2">
               {workspace === "资产" && (
-                <Button variant="outline" size="sm" className="h-7" onClick={() => setImportType("资产清单")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => setImportType("资产清单")}
+                  disabled={assetListCount === 0}
+                >
                   <Import className="size-3.5" /> 带入资产清单
+                  {assetListCount ? <span className="ml-1 opacity-60">({assetListCount})</span> : null}
                 </Button>
               )}
               {workspace === "静帧" && epNo !== null && (

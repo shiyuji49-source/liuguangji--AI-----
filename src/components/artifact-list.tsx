@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,23 @@ export type ArtifactItem = {
   authorName: string;
 };
 
+// 产物类型展示顺序（与流水线一致）
+const TYPE_ORDER = ["剧本", "诊断报告", "资产清单", "资产提示词", "静帧提示词", "视频提示词"];
+
 export function ArtifactList({ items }: { items: ArtifactItem[] }) {
   const [active, setActive] = useState<ArtifactItem | null>(null);
+  const [filter, setFilter] = useState<string>("全部");
+
+  const types = useMemo(() => {
+    const present = new Set(items.map((i) => i.type));
+    return TYPE_ORDER.filter((t) => present.has(t));
+  }, [items]);
+
+  const counts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const i of items) m[i.type] = (m[i.type] ?? 0) + 1;
+    return m;
+  }, [items]);
 
   if (items.length === 0) {
     return (
@@ -31,10 +46,32 @@ export function ArtifactList({ items }: { items: ArtifactItem[] }) {
     );
   }
 
+  const shown = filter === "全部" ? items : items.filter((i) => i.type === filter);
+
   return (
     <>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {["全部", ...types].map((t) => {
+          const cnt = t === "全部" ? items.length : counts[t];
+          const on = filter === t;
+          return (
+            <button
+              key={t}
+              onClick={() => setFilter(t)}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                on
+                  ? "border-primary/60 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t}
+              <span className="ml-1.5 opacity-60">{cnt}</span>
+            </button>
+          );
+        })}
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((a) => (
+        {shown.map((a) => (
           <Card
             key={a.id}
             className="cursor-pointer transition-colors hover:border-primary/50"

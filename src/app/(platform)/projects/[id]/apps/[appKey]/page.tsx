@@ -33,6 +33,8 @@ export default async function AppHostPage({
     projectName: project.name,
     projectTier: project.tier,
     projectAspect: project.aspect,
+    projectProductionType: project.productionType,
+    projectStyleGenre: project.styleGenre ?? "",
     projectRole,
     userId: user.id,
   };

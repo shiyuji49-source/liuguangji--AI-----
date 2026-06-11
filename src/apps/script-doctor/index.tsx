@@ -1,15 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Stethoscope,
-  Upload,
   Eye,
-  Trash2,
-  Loader2,
   BookOpenText,
   ClipboardList,
   FilePenLine,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,19 +23,15 @@ import type { ProjectRole, ProjectTier } from "@/lib/db/schema";
 type Script = {
   id: string;
   title: string;
-  filename: string;
   episodeCount: number;
   totalChars: number;
-  warnings: string[] | null;
-  createdAt: string;
 };
 type Episode = { episodeNo: number; title: string; chars: number };
 type Scope = "full" | number;
 
 /**
- * 应用①剧本医生（P0）：结构化工作台。
- * 剧本住在项目里（上传一次自动分集）；左侧集列表导航；
- * 按 skill 工作流「通读诊断 → 确认策略 → 逐集修改 → 资产清单」提供快捷操作。
+ * 应用①剧本医生（P0）：结构化工作台，项目剧本的纯消费者。
+ * 剧本属于项目（在项目控制台上传/管理）；这里只「选剧本 → 按集导航 → 诊断/修改」。
  * 模型 = LLM_MODEL_HEAVY（claude-opus-4-8，1M 上下文），全剧块走前缀缓存。
  */
 export function ScriptDoctorApp({
@@ -54,7 +49,6 @@ export function ScriptDoctorApp({
   const [activeScriptId, setActiveScriptId] = useState<string | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [scope, setScope] = useState<Scope>("full");
-  const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<{ title: string; content: string } | null>(null);
   const [autoSend, setAutoSend] = useState<{ text: string; nonce: number } | null>(null);
 
@@ -65,9 +59,7 @@ export function ScriptDoctorApp({
     if (!res.ok) return;
     const data = await res.json();
     setScriptsList(data.scripts);
-    if (data.scripts.length > 0) {
-      setActiveScriptId((cur) => cur ?? data.scripts[0].id);
-    }
+    if (data.scripts.length > 0) setActiveScriptId((cur) => cur ?? data.scripts[0].id);
   }, [projectId]);
 
   useEffect(() => {
@@ -86,39 +78,6 @@ export function ScriptDoctorApp({
       setScope("full");
     })();
   }, [activeScriptId]);
-
-  async function onUpload(file: File) {
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`/api/projects/${projectId}/scripts`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? "上传失败");
-        return;
-      }
-      for (const w of data.warnings ?? []) toast.warning(w, { duration: 8000 });
-      toast.success(`已分集：共 ${data.episodes.length} 集`);
-      await fetchScripts();
-      setActiveScriptId(data.script.id);
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function onDeleteScript() {
-    if (!activeScript) return;
-    if (!confirm(`删除剧本《${activeScript.title}》？已生成的诊断/修改产物不受影响。`)) return;
-    const res = await fetch(`/api/scripts/${activeScript.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      toast.error("删除失败");
-      return;
-    }
-    setActiveScriptId(null);
-    setScriptsList(null);
-    await fetchScripts();
-  }
 
   async function openPreview(no: number, title: string) {
     if (!activeScriptId) return;
@@ -157,20 +116,20 @@ export function ScriptDoctorApp({
     }
   }
 
-  // ===== 无剧本：上传引导 =====
+  // ===== 无剧本：引导去项目控制台上传（剧本是项目资源，不在应用内管理）=====
   if (scriptsList !== null && scriptsList.length === 0) {
     return (
       <div className="space-y-4">
         <Header projectName={projectName} />
         <Card>
           <CardContent className="flex flex-col items-center gap-4 py-20">
-            <Upload className="size-8 text-primary" />
-            <p className="text-sm text-muted-foreground">
-              上传整部剧本（.docx / .pdf / .txt），系统自动按「第X集 / EP1」分集
-            </p>
-            <UploadButton uploading={uploading} onPick={onUpload} label="上传剧本" />
+            <FolderOpen className="size-8 text-primary" />
+            <p className="text-sm text-muted-foreground">本项目还没有剧本</p>
+            <Button asChild>
+              <Link href={`/projects/${projectId}`}>去项目页上传剧本</Link>
+            </Button>
             <p className="text-xs text-muted-foreground">
-              上传后按「通读诊断 → 确认策略 → 逐集修改 → 资产清单」的流程工作
+              剧本是项目资源，上传一次后剧本医生与提示词生成器都能用
             </p>
           </CardContent>
         </Card>
@@ -203,14 +162,8 @@ export function ScriptDoctorApp({
             <span>
               {activeScript.episodeCount} 集 · {(activeScript.totalChars / 10000).toFixed(1)} 万字
             </span>
-            <UploadButton uploading={uploading} onPick={onUpload} label="传新版本" small />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-1.5 text-muted-foreground hover:text-destructive"
-              onClick={onDeleteScript}
-            >
-              <Trash2 className="size-3.5" />
+            <Button asChild variant="ghost" size="sm" className="h-7 px-1.5">
+              <Link href={`/projects/${projectId}`}>管理剧本</Link>
             </Button>
           </div>
         )}
@@ -219,9 +172,7 @@ export function ScriptDoctorApp({
       <div className="grid grid-cols-[200px_1fr] gap-4">
         {/* 集列表导航 */}
         <aside className="flex h-[calc(100vh-8.5rem)] flex-col rounded-[10px] border border-border bg-card">
-          <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-            工作范围
-          </div>
+          <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">工作范围</div>
           <ScrollArea className="flex-1">
             <div className="space-y-0.5 p-2">
               <button
@@ -268,10 +219,7 @@ export function ScriptDoctorApp({
           <ChatWorkspace
             appKey="script-doctor"
             projectId={projectId}
-            sendBody={() => ({
-              scriptId: activeScript?.id,
-              scope,
-            })}
+            sendBody={() => ({ scriptId: activeScript?.id, scope })}
             artifactTypes={["诊断报告", "资产清单", "剧本"]}
             autoSend={autoSend}
             placeholder={
@@ -329,38 +277,5 @@ function Header({ projectName }: { projectName: string }) {
       <h1 className="text-base">剧本医生</h1>
       <span className="text-xs text-muted-foreground">{projectName}</span>
     </div>
-  );
-}
-
-function UploadButton({
-  uploading,
-  onPick,
-  label,
-  small,
-}: {
-  uploading: boolean;
-  onPick: (f: File) => void;
-  label: string;
-  small?: boolean;
-}) {
-  return (
-    <label className="cursor-pointer">
-      <input
-        type="file"
-        accept=".docx,.pdf,.txt,.md"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onPick(f);
-          e.target.value = "";
-        }}
-      />
-      <Button variant={small ? "outline" : "default"} size="sm" className={small ? "h-7" : ""} asChild disabled={uploading}>
-        <span>
-          {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-          {label}
-        </span>
-      </Button>
-    </label>
   );
 }
