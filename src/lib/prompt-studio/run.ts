@@ -126,6 +126,9 @@ export async function generateItemPrompt(opts: {
   parts.push(
     `【目标】请为以下条目生成提示词：\n名称：${opts.name}\n描述：${opts.brief}${constraint ? `\n【硬约束（按 skill）】${constraint}` : ""}`
   );
+  parts.push(
+    `【输出格式（硬规则）】只输出可直接粘贴进 image2 的成品提示词正文本身：第一个字就是提示词第一个字。禁止 markdown 标题/加粗/分隔线/引用块，禁止"角色名/设计方向/最终提示词"等字段分解，禁止任何开场白、结尾说明、使用建议。skill 中的开场语/结束语/对话流程仅适用对话场景，此处一律不用。`
+  );
   if (opts.refine) parts.push(`【额外要求】${opts.refine}`);
   if (note) parts.push(note);
   const userText = parts.join("\n\n");
@@ -180,6 +183,20 @@ export type ExtractedShot = {
 // 镜头设计 skill 会产出更密的分镜（反应/插入/二次表达），镜数与描述都更多，需更高上限防截断
 const SHOTLIST_MAX_OUT = 20000;
 
+/** 台词镜最短时长（秒）：纯台词字数 ÷ 3.5（中文口播 3-4 字/秒）+ 2 秒表演拍。环境音/音效行不算台词。 */
+function minDialogueDuration(dialogue: string): number | null {
+  const d = dialogue.trim();
+  if (!d) return null;
+  if (/^(环境音|音效|声音|画外音?[:：]?\s*$|SFX|BGM|无台词|无对白)/.test(d)) return null;
+  // 取说话人前缀（"角色（情绪）："）之后的正文；无冒号且不像台词（无引号）→ 视为声音描述
+  const m = d.match(/[:：]\s*([\s\S]+)$/);
+  const body = m ? m[1] : /[「『"“]/.test(d) ? d : null;
+  if (!body) return null;
+  const chars = body.replace(/[「」『』""''…—\s.。，,!！?？]/g, "").length;
+  if (chars < 2) return null;
+  return Math.min(15, Math.ceil(chars / 3.5) + 2);
+}
+
 function parseShots(text: string): ExtractedShot[] {
   let t = text.trim();
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -192,19 +209,28 @@ function parseShots(text: string): ExtractedShot[] {
     if (!Array.isArray(arr)) return [];
     return arr
       .filter((x) => x && (typeof x.summary === "string" || typeof x.sceneLabel === "string"))
-      .map((x, i) => ({
-        shotNo: Number.isFinite(Number(x.shotNo)) ? Number(x.shotNo) : i + 1,
-        sceneLabel: String(x.sceneLabel ?? "").slice(0, 60),
-        summary: String(x.summary ?? "").slice(0, 500),
-        shotType: String(x.shotType ?? "").slice(0, 30),
-        cameraMove: String(x.cameraMove ?? "").slice(0, 60),
-        dialogue: String(x.dialogue ?? "").slice(0, 300),
-        durationSec: Number.isFinite(Number(x.durationSec)) ? Math.min(Number(x.durationSec), 60) : null,
-        assetRefs: Array.isArray(x.assetRefs)
-          ? x.assetRefs.map((a: unknown) => String(a).slice(0, 40)).slice(0, 12)
-          : [],
-        needStill: typeof x.needStill === "boolean" ? x.needStill : true,
-      }))
+      .map((x, i) => {
+        const dialogue = String(x.dialogue ?? "").slice(0, 300);
+        let durationSec = Number.isFinite(Number(x.durationSec))
+          ? Math.min(Number(x.durationSec), 60)
+          : null;
+        // 兜底：台词镜估短了视频像倍速播放——强制不低于口播下限（宁长勿短）
+        const minDur = minDialogueDuration(dialogue);
+        if (minDur !== null) durationSec = Math.max(durationSec ?? 0, minDur);
+        return {
+          shotNo: Number.isFinite(Number(x.shotNo)) ? Number(x.shotNo) : i + 1,
+          sceneLabel: String(x.sceneLabel ?? "").slice(0, 60),
+          summary: String(x.summary ?? "").slice(0, 500),
+          shotType: String(x.shotType ?? "").slice(0, 30),
+          cameraMove: String(x.cameraMove ?? "").slice(0, 60),
+          dialogue,
+          durationSec,
+          assetRefs: Array.isArray(x.assetRefs)
+            ? x.assetRefs.map((a: unknown) => String(a).slice(0, 40)).slice(0, 12)
+            : [],
+          needStill: typeof x.needStill === "boolean" ? x.needStill : true,
+        };
+      })
       .slice(0, 200);
   } catch {
     return [];
@@ -241,7 +267,7 @@ export async function buildShotlist(opts: {
       : ``,
     `每镜一条 JSON：{"shotNo":序号,"sceneLabel":"场（如 1-1 皇城大街·日·外）","summary":"画面/动作摘要（含镜头意图，如『反应：皇帝眼神由疑转杀』）","shotType":"景别","cameraMove":"运镜","dialogue":"台词或声音（无对白写环境音/留空）","durationSec":预估秒数或null,"assetRefs":["@资产名"...],"needStill":是否值得出静帧}`,
     `shotType 用规范景别词：远景/全景/中景/中近景/近景/特写/大特写/微距。cameraMove 写具体运镜（固定/手持呼吸/缓慢推近/拉远/横移/摇/升降/环绕/俯拍冻结/同轴猛推等），禁写 zoom。`,
-    `durationSec 按镜头类型估：闪现建立 1 秒内；单句台词 3-7；无台词反应（带情绪弧）5-10；插入/空镜 1-2；情绪特写完整弧 8-15。单镜不超过 15 秒。`,
+    `durationSec（⚠️宁长勿短，估短了视频会像倍速播放）：有台词的镜 = 纯台词字数 ÷ 3.5（中文口播约 3-4 字/秒）+ 2 秒表演拍，向上取整（例：14 字台词 ≈ 6 秒，30 字 ≈ 11 秒）；闪现建立 1 秒内；无台词反应（带情绪弧）5-10；插入/空镜 1-2；情绪特写完整弧 8-15。单镜不超过 15 秒。`,
     `needStill（是否值得出静帧图作强控锚）：${tier === "B" ? "B 级跑量剧——只给复杂构图/多人/难控动作/关键情绪/会被反复参考的镜标 true，其余 false（直接进视频）" : `${tier} 级精品——构图复杂或关键情绪镜标 true，简单过场标 false`}。`,
     opts.knownAssets.length
       ? `assetRefs 里的资产名尽量对齐项目已建档资产：${opts.knownAssets.join("、")}（出现了清单外的重要资产也可以写新 @名）。`
@@ -346,10 +372,12 @@ export async function planSegments(opts: {
     episode: opts.episodeNo,
   });
   const userText = [
-    `【任务】只做"片段划分"这一步，不写提示词：按 skill 的片段划分规则（同场景、同角色组、情绪/时间连续的相邻镜合并；每片段 ≤15 秒；跨场景硬切/角色组改变才拆分；文延武拼），把下面整集分镜表分组。`,
-    `【打满原则（最高优先级）】15 秒是要打满的预算，不只是上限：相邻镜必须持续合并，直到再加一镜就超 15 秒或跨场景为止。禁止把同场连续的戏拆成多个小片段；插镜/反应镜并入所在片段，不单独成段。输出前自查：任何相邻两片段若同场景且时长合计 ≤15 秒，必须先合并成一个再输出。`,
-    `每片段一条 JSON：{"segmentNo":序号,"label":"一句话标签（如 破庙对峙·拔刀缠斗）","shotNos":[相邻镜号],"durationSec":合计目标秒数(≤15)}`,
-    `镜号必须全部覆盖、不重复、保持原顺序相邻合并。只输出 JSON 数组，不要任何额外文字。`,
+    `【任务】只做"片段划分"这一步，不写提示词：按 skill 的片段划分规则（同场景、同角色组、情绪/时间连续的相邻镜合并；跨场景硬切/角色组改变才拆分；文延武拼），把下面整集分镜表分组。`,
+    `【时长规则（最高优先级，违反=废稿）】每片段时长 = 成员镜 durationSec 的**实际加总**（分镜表里已给出每镜秒数，必须照实累加，不许拍脑袋写 15）。目标区间 **13-15 秒**，硬上限 15 秒——加总超 15 就必须拆开。不必死磕 15：同场戏装到 10 秒、下一镜 7 秒装不下，就让本片段停在 10 秒。`,
+    `【剪辑点重叠（可选技巧）】片段没装满（如 10 秒）且下一镜较长装不下时，可以把下一镜**同时**作为本片段的尾镜和下一片段的首镜（镜号在两个相邻片段中重复出现）——重叠部分方便剪辑找切点。`,
+    `【打满原则】在时长规则允许内尽量装满：同场景相邻镜持续合并到再加一镜会超 15 秒为止；插镜/反应镜并入所在片段，不单独成段；禁止把同场连续的戏拆成一堆小片段。`,
+    `每片段一条 JSON：{"segmentNo":序号,"label":"一句话标签（如 破庙对峙·拔刀缠斗）","shotNos":[相邻镜号],"durationSec":成员镜秒数实际加总}`,
+    `镜号必须全部覆盖、保持原顺序相邻分组（仅相邻片段边界镜可重复）。只输出 JSON 数组，不要任何额外文字。`,
     note,
     `----- 第 ${opts.episodeNo} 集分镜表 -----`,
     shotTableText(opts.shots),
@@ -392,57 +420,99 @@ export async function planSegments(opts: {
     try {
       const arr = JSON.parse(t.slice(start, end + 1));
       if (Array.isArray(arr)) {
-        const seen = new Set<number>();
         segments = arr
           .filter((x) => x && Array.isArray(x.shotNos) && x.shotNos.length > 0)
           .map((x, i) => ({
             segmentNo: i + 1,
             label: String(x.label ?? "").slice(0, 60),
-            shotNos: (x.shotNos as unknown[])
-              .map((n) => Number(n))
-              .filter((n) => Number.isFinite(n) && !seen.has(n) && (seen.add(n), true)),
-            durationSec: Number.isFinite(Number(x.durationSec))
-              ? Math.min(Number(x.durationSec), 15)
-              : null,
+            // 片段内去重；允许相邻片段共享边界镜（剪辑点重叠是用户要的特性）
+            shotNos: [
+              ...new Set(
+                (x.shotNos as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n))
+              ),
+            ],
+            durationSec: null, // 一律不信 LLM 标称，下面按分镜表实际加总重算
           }))
           .filter((s) => s.shotNos.length > 0)
-          .slice(0, 60);
+          .slice(0, 80);
       }
     } catch {
       segments = [];
     }
   }
 
-  // 确定性打满兜底（不依赖模型自觉）：相邻片段若同场景且合计 ≤15s，强制合并，循环到不动点。
-  // 用户铁律：15 秒是要打满的预算——"片段234加一起是15秒，为什么不合并？"
-  const sceneByNo = new Map(opts.shots.map((s) => [s.shotNo, s.sceneLabel.trim()]));
+  // ===== 确定性后处理（不依赖模型自觉）。时长一律 = 成员镜 durationSec 实际加总 =====
+  const shotByNo = new Map(opts.shots.map((s) => [s.shotNo, s]));
+  const durOf = (no: number) => shotByNo.get(no)?.durationSec ?? 3; // 缺时长按 3s 保守估
+  const sumOf = (nos: number[]) => nos.reduce((s, n) => s + durOf(n), 0);
   const sceneOf = (nos: number[]): string | null => {
-    const labels = new Set(nos.map((n) => sceneByNo.get(n) ?? `?${n}`));
+    const labels = new Set(nos.map((n) => shotByNo.get(n)?.sceneLabel.trim() ?? `?${n}`));
     return labels.size === 1 ? [...labels][0] : null;
   };
+
+  // 1) 超 15s 的片段装箱拆分：按镜序累加，加下一镜会超 15 就切断（单镜超 15 自成一段）
+  const packed: PlannedSegment[] = [];
+  for (const seg of segments) {
+    if (sumOf(seg.shotNos) <= 15) {
+      packed.push(seg);
+      continue;
+    }
+    let bin: number[] = [];
+    let part = 0;
+    for (const no of seg.shotNos) {
+      if (bin.length > 0 && sumOf(bin) + durOf(no) > 15) {
+        part++;
+        packed.push({
+          segmentNo: 0,
+          label: part === 1 ? seg.label : `${seg.label}·续${part - 1}`.slice(0, 60),
+          shotNos: bin,
+          durationSec: null,
+        });
+        bin = [];
+      }
+      bin.push(no);
+    }
+    if (bin.length) {
+      part++;
+      packed.push({
+        segmentNo: 0,
+        label: part === 1 ? seg.label : `${seg.label}·续${part - 1}`.slice(0, 60),
+        shotNos: bin,
+        durationSec: null,
+      });
+    }
+  }
+  segments = packed;
+
+  // 2) 打满合并兜底：相邻片段同场景且实际加总 ≤15s → 合并，循环到不动点
   let mergedAny = true;
   while (mergedAny) {
     mergedAny = false;
     for (let i = 0; i + 1 < segments.length; i++) {
       const a = segments[i];
       const b = segments[i + 1];
-      const da = a.durationSec ?? 15;
-      const db = b.durationSec ?? 15;
       const sa = sceneOf(a.shotNos);
       const sb = sceneOf(b.shotNos);
-      if (sa !== null && sa === sb && da + db <= 15) {
+      // 合并时边界重叠镜只算一次
+      const mergedNos = [...new Set([...a.shotNos, ...b.shotNos])];
+      if (sa !== null && sa === sb && sumOf(mergedNos) <= 15) {
         segments.splice(i, 2, {
           segmentNo: 0,
           label: `${a.label}·${b.label}`.slice(0, 60),
-          shotNos: [...a.shotNos, ...b.shotNos],
-          durationSec: da + db,
+          shotNos: mergedNos,
+          durationSec: null,
         });
         mergedAny = true;
         break;
       }
     }
   }
-  segments.forEach((s, i) => (s.segmentNo = i + 1));
+
+  // 3) 重编号 + 写实际时长
+  segments.forEach((s, i) => {
+    s.segmentNo = i + 1;
+    s.durationSec = Math.min(sumOf(s.shotNos), 15);
+  });
 
   return { segments, credits };
 }
@@ -489,7 +559,7 @@ export async function generateSegmentPrompt(opts: {
   parts.push(
     [
       `【任务】为本片段生成**一条**多镜合并的 Seedance 2.0 视频提示词（不是逐镜各一条）。严格按 skill 的 11 节结构序依次写，不跳不乱：`,
-      `1. @handle 声明：@image1 起逐条重编（人物=资产母版，全套着装+状态写死；有静帧则声明为构图/光影锚）。`,
+      `1. @handle 声明：@image1 起逐条重编，**只标资产是什么，不写外观描述**（外观由参考图锁定，写了浪费字数）——格式如「@image1=杨延昭（战损血污状态）」「@image2=汴京街市场景图」「@image3=镜3静帧（构图/光影锚）」；仅状态词（战损/湿发/换装）需要标注，脸型服装细节一概不写。`,
       `2. 通用警告：⚠️空间布局（MAIN VIEW/位置/米数/朝向/遮挡/视线锁定）／⚠️对白规则：一句台词=一个镜头，每句写明对谁说／⚠️本视频严格只有 ${opts.shots.length} 个镜头——禁止添加额外镜头。`,
       `3. 【镜头N】块逐镜写（成员镜一一对应）：机位（焦段mm+光圈+景别+手持/static/dolly）／摄影机运动（绑焦点角色情绪，一镜一动）／背景／动作（分步①②③，小幅动作+承接余势）／⚠️⚠️⚠️微表演细节（肌肉/呼吸/眼神/皮肤，禁抽象情绪词；台词带 pre/mid/post 三拍）。闪现镜标 0.3-0.5 秒并写硬切。`,
       `4. 风格块：practicals-only（只用实景光，禁一切电影补光，摄影机在阴影侧，60:30:10 配色）。`,

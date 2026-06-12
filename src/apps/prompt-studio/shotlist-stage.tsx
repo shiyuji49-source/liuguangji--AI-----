@@ -157,10 +157,12 @@ export function ShotlistStage({
                 <TableRow key={s.id} className={s.needStill ? "" : "opacity-55"}>
                   <TableCell>{s.shotNo}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.sceneLabel}</TableCell>
-                  <TableCell className="max-w-72">
-                    <div className="truncate text-sm">{s.summary}</div>
+                  <TableCell className="min-w-64 max-w-96">
+                    <div className="whitespace-normal break-words text-sm leading-5">{s.summary}</div>
                     {s.dialogue && (
-                      <div className="truncate text-xs text-muted-foreground">「{s.dialogue}」</div>
+                      <div className="mt-0.5 whitespace-normal break-words text-xs leading-4 text-muted-foreground">
+                        「{s.dialogue}」
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="text-xs">{s.shotType}</TableCell>
