@@ -68,13 +68,18 @@ export function PromptItemCard({
               {item.kind}
             </Badge>
           )}
-          <span className="truncate text-sm font-medium">{item.name}</span>
+          <span className="min-w-0 shrink-0 truncate text-sm font-medium" style={{ maxWidth: "55%" }}>
+            {item.name}
+          </span>
           {!!item.episodes?.length && (
-            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] text-muted-foreground" title="出现集数">
+            <span
+              className="max-w-28 shrink overflow-x-auto whitespace-nowrap rounded-full border border-border px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              title={`出现集数：${epRangeLabel(item.episodes)}`}
+            >
               {epRangeLabel(item.episodes)}
-            </Badge>
+            </span>
           )}
-          <span className={`ml-auto text-xs ${st.cls}`}>
+          <span className={`ml-auto shrink-0 text-xs ${st.cls}`}>
             {busy && <Loader2 className="mr-1 inline size-3 animate-spin" />}
             {st.text}
           </span>
