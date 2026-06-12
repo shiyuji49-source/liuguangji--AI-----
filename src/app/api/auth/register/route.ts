@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { users, wallets, verificationTokens } from "@/lib/db/schema";
 import { createToken } from "@/lib/tokens";
-import { sendVerificationEmail } from "@/lib/email";
+import { sendVerificationEmail, emailConfigured } from "@/lib/email";
 import { smsEnabled } from "@/lib/sms";
 
 const emailSchema = z.object({
@@ -40,16 +40,22 @@ export async function POST(req: Request) {
     const exists = await db.query.users.findFirst({ where: eq(users.email, input.email) });
     if (exists) return Response.json({ error: "该邮箱已注册" }, { status: 409 });
 
+    // 未配置 SMTP（内测/无邮件基建）时自动免验证——否则收不到验证邮件就永远登不进
+    const autoVerify = !emailConfigured();
     const [user] = await db
       .insert(users)
       .values({
         name: input.name,
         email: input.email,
         passwordHash: await bcrypt.hash(input.password, 10),
+        emailVerifiedAt: autoVerify ? new Date() : null,
       })
       .returning();
     await db.insert(wallets).values({ userId: user.id }).onConflictDoNothing();
 
+    if (autoVerify) {
+      return Response.json({ ok: true, message: "注册成功，可直接登录" });
+    }
     const token = await createToken(input.email, "email_verify", 24 * 3600_000);
     await sendVerificationEmail(input.email, token);
     return Response.json({ ok: true, message: "注册成功，请查收验证邮件后登录" });

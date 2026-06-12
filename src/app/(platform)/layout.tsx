@@ -47,12 +47,13 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           </Link>
           <RailNav items={items} />
           <div className="mt-auto flex flex-col items-center gap-2">
-            <div
-              className="flex size-10 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm text-primary"
-              title={`${user.name} · ${PLATFORM_ROLE_LABELS[user.role]}`}
+            <Link
+              href="/account"
+              className="flex size-10 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm text-primary transition-colors hover:border-primary/60 hover:bg-primary/20"
+              title={`${user.name} · ${PLATFORM_ROLE_LABELS[user.role]} · 账号设置/改密码`}
             >
               {user.name.slice(0, 1)}
-            </div>
+            </Link>
             <RailSignOut />
           </div>
         </aside>
