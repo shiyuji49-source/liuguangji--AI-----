@@ -2,6 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { requireProjectMember, AuthError } from "@/lib/auth-helpers";
 import { getApp, isAppLive, appsVisibleFor } from "@/apps/registry";
 import { PromptStudioApp } from "@/apps/prompt-studio";
+import { ScriptDoctorApp } from "@/apps/script-doctor";
 
 export default async function AppHostPage({
   params,
@@ -39,6 +40,8 @@ export default async function AppHostPage({
   };
 
   switch (app.key) {
+    case "script-doctor":
+      return <ScriptDoctorApp {...common} />;
     case "prompt-studio":
       return <PromptStudioApp {...common} />;
     default:

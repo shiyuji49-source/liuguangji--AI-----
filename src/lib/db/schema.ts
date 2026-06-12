@@ -115,7 +115,15 @@ export const messages = pgTable(
   (t) => [index("msg_conv_idx").on(t.conversationId, t.createdAt)]
 );
 
-export type ArtifactType = "剧本" | "诊断报告" | "资产清单" | "资产提示词" | "静帧提示词" | "视频提示词";
+export type ArtifactType =
+  | "剧本"
+  | "诊断报告"
+  | "剧本诊断"
+  | "影视化剧本"
+  | "资产清单"
+  | "资产提示词"
+  | "静帧提示词"
+  | "视频提示词";
 
 export const artifacts = pgTable(
   "artifacts",

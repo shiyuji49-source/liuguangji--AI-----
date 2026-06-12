@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { artifacts } from "@/lib/db/schema";
 import { requireProjectMember, toErrorResponse } from "@/lib/auth-helpers";
 
-const ARTIFACT_TYPES = ["剧本", "诊断报告", "资产清单", "资产提示词", "静帧提示词", "视频提示词"] as const;
+const ARTIFACT_TYPES = ["剧本", "诊断报告", "剧本诊断", "影视化剧本", "资产清单", "资产提示词", "静帧提示词", "视频提示词"] as const;
 
 // 项目产物列表（项目成员可见；?type= 过滤，供「带入资产清单」用）
 export async function GET(req: Request) {
