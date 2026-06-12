@@ -25,6 +25,10 @@ const phoneSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  // 内测开关：ALLOW_REGISTRATION=false 时关闭公开注册（由 admin 后台建号）
+  if (process.env.ALLOW_REGISTRATION === "false") {
+    return Response.json({ error: "内测期间未开放注册，请联系管理员开通账号" }, { status: 403 });
+  }
   const body = await req.json().catch(() => null);
   const parsed = z.discriminatedUnion("kind", [emailSchema, phoneSchema]).safeParse(body);
   if (!parsed.success) {

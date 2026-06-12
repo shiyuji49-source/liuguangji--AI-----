@@ -1,0 +1,52 @@
+# 鎏光机内测部署（单机 docker compose）：postgres + 迁移 + 应用
+# 用法见 docs/部署指南.md。所有密钥从同目录 .env 读取。
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liuguangji
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 里设置 DB_PASSWORD}
+      POSTGRES_DB: liuguangji
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liuguangji"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 一次性任务：跑数据库迁移（用 builder 层，有 drizzle-kit）
+  migrate:
+    build:
+      context: .
+      target: builder
+    command: npx drizzle-kit migrate
+    environment:
+      DATABASE_URL: postgres://liuguangji:${DB_PASSWORD}@db:5432/liuguangji
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      # 覆盖 .env 中的本地库地址，指向 compose 内的 db 服务
+      DATABASE_URL: postgres://liuguangji:${DB_PASSWORD}@db:5432/liuguangji
+      # NextAuth 在 IP/反代后面需要信任 Host
+      AUTH_TRUST_HOST: "true"
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
