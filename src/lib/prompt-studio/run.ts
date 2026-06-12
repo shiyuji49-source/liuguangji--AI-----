@@ -18,12 +18,48 @@ export type ProjectSpec = {
   styleGenre: string | null;
 };
 
-const EXTRACT_MAX_OUT = 6000;
+// 资产条目带 episodes 集数数组后输出大幅变长（111 项×长数组可超 6000 token）→ 截断=提取失败
+const EXTRACT_MAX_OUT = 16000;
 const GENERATE_MAX_OUT = 4096;
 // 静帧是 24 字段导演分解，成品常 8000+ 字符（≈6000+ token）；4096 会截断 → "跑不出来"。
 const STILL_MAX_OUT = 10000;
 
-// ===== 提取（提取资产 / 提取分镜，用裸提示词 + JSON，避开乐奇结构化输出不稳）=====
+// ===== 提取（提取资产 / 提取分镜，用裸提示词 + JSON，避开结构化输出不稳）=====
+
+/**
+ * 宽容 JSON 数组解析：剥代码围栏 → 直接 parse → 失败则截断恢复
+ * （Kimi/长输出偶发数组未闭合：砍到最后一个完整对象 "}" 再补 "]" 重试）。
+ */
+export function parseJsonArrayLoose(text: string): unknown[] | null {
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf("[");
+  if (start === -1) return null;
+  const end = t.lastIndexOf("]");
+  if (end > start) {
+    try {
+      const arr = JSON.parse(t.slice(start, end + 1));
+      if (Array.isArray(arr)) return arr;
+    } catch {
+      /* 走截断恢复 */
+    }
+  }
+  // 截断恢复：从尾部往前找完整对象边界逐个尝试
+  let body = t.slice(start);
+  for (let i = 0; i < 50; i++) {
+    const cut = body.lastIndexOf("}");
+    if (cut === -1) return null;
+    body = body.slice(0, cut + 1);
+    try {
+      const arr = JSON.parse(body + "]");
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch {
+      body = body.slice(0, cut); // 这个 "}" 不是对象边界，继续往前
+    }
+  }
+  return null;
+}
 
 function extractInstruction(workspace: Workspace, episodeLabel?: string): string {
   if (workspace === "资产") {
@@ -36,15 +72,9 @@ function extractInstruction(workspace: Workspace, episodeLabel?: string): string
 }
 
 function parseItems(text: string, workspace: Workspace): ExtractedItem[] {
-  let t = text.trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("[");
-  const end = t.lastIndexOf("]");
-  if (start === -1 || end === -1) return [];
-  try {
-    const arr = JSON.parse(t.slice(start, end + 1));
-    if (!Array.isArray(arr)) return [];
+  const arr = parseJsonArrayLoose(text) as Record<string, unknown>[] | null;
+  if (!arr) return [];
+  {
     const validKinds = ["人物", "服装", "道具", "场景", "群演"];
     return arr
       .filter((x) => x && typeof x.name === "string" && x.name.trim())
@@ -73,8 +103,6 @@ function parseItems(text: string, workspace: Workspace): ExtractedItem[] {
         };
       })
       .slice(0, 120);
-  } catch {
-    return [];
   }
 }
 
@@ -210,15 +238,9 @@ function minDialogueDuration(dialogue: string): number | null {
 }
 
 function parseShots(text: string): ExtractedShot[] {
-  let t = text.trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("[");
-  const end = t.lastIndexOf("]");
-  if (start === -1 || end === -1) return [];
-  try {
-    const arr = JSON.parse(t.slice(start, end + 1));
-    if (!Array.isArray(arr)) return [];
+  const arr = parseJsonArrayLoose(text) as Record<string, unknown>[] | null;
+  if (!arr) return [];
+  {
     return arr
       .filter((x) => x && (typeof x.summary === "string" || typeof x.sceneLabel === "string"))
       .map((x, i) => {
@@ -245,8 +267,6 @@ function parseShots(text: string): ExtractedShot[] {
         };
       })
       .slice(0, 200);
-  } catch {
-    return [];
   }
 }
 
@@ -485,17 +505,13 @@ export async function planSegments(opts: {
     ref: { appKey: "prompt-studio", note: `划分片段-第${opts.episodeNo}集` },
   });
 
-  // 解析 + 防御：镜号去重、片段重编号
-  let t = text.trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("[");
-  const end = t.lastIndexOf("]");
+  // 解析 + 防御：镜号去重、片段重编号（宽容解析兜截断）
+  const parsedArr = parseJsonArrayLoose(text) as Record<string, unknown>[] | null;
   let segments: PlannedSegment[] = [];
-  if (start !== -1 && end !== -1) {
-    try {
-      const arr = JSON.parse(t.slice(start, end + 1));
-      if (Array.isArray(arr)) {
+  if (parsedArr) {
+    {
+      {
+        const arr = parsedArr;
         segments = arr
           .filter((x) => x && Array.isArray(x.shotNos) && x.shotNos.length > 0)
           .map((x, i) => ({
@@ -512,8 +528,6 @@ export async function planSegments(opts: {
           .filter((s) => s.shotNos.length > 0)
           .slice(0, 80);
       }
-    } catch {
-      segments = [];
     }
   }
 

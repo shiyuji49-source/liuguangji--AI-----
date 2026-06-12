@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/lib/db";
 import { scriptEpisodes } from "../src/lib/db/schema";
+import { writeFileSync } from "node:fs";
 import { getSkillPrompt } from "../src/lib/ai/skills";
 
 const kimi = createAnthropic({
@@ -31,7 +32,7 @@ async function main() {
   const u = usage as unknown as { outputTokens?: number };
   console.log(`finishReason: ${finishReason} | 输出tokens: ${u.outputTokens} | 字符: ${text.length} | ${Date.now() - t0}ms`);
   console.log("尾部120字:", JSON.stringify(text.slice(-120)));
-  require("fs").writeFileSync("/tmp/kimi-taskA.txt", text);
+  writeFileSync("/tmp/kimi-taskA.txt", text);
   process.exit(0);
 }
 void main();

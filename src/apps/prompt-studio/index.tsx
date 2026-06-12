@@ -165,6 +165,7 @@ export function PromptStudioApp({
           episodeNo={epNo}
           shots={shots}
           onShotsChange={setShots}
+          onBusyChange={setBatchBusy}
         />
       )}
       {stage === "静帧" &&

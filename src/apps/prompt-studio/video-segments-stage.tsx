@@ -65,6 +65,7 @@ export function VideoSegmentsStage({
   async function plan(replace: boolean) {
     if (!scriptId || !episodeNo) return;
     setPlanning(true);
+    onBusyChange?.(true);
     try {
       const res = await fetch("/api/prompt-studio/segments", {
         method: "POST",
@@ -85,6 +86,7 @@ export function VideoSegmentsStage({
       router.refresh();
     } finally {
       setPlanning(false);
+      onBusyChange?.(false);
     }
   }
 

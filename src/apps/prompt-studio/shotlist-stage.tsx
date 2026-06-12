@@ -32,12 +32,14 @@ export function ShotlistStage({
   episodeNo,
   shots,
   onShotsChange,
+  onBusyChange,
 }: {
   projectId: string;
   scriptId: string | null;
   episodeNo: number | null;
   shots: Shot[];
   onShotsChange: (shots: Shot[]) => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [building, setBuilding] = useState(false);
   const [editing, setEditing] = useState<Shot | null>(null);
@@ -51,6 +53,7 @@ export function ShotlistStage({
       return;
     }
     setBuilding(true);
+    onBusyChange?.(true);
     try {
       const res = await fetch("/api/prompt-studio/shotlist", {
         method: "POST",
@@ -70,6 +73,7 @@ export function ShotlistStage({
       toast.success(`分镜表已构建：${data.shots.length} 镜（消耗 ${data.credits} 积分）`);
     } finally {
       setBuilding(false);
+      onBusyChange?.(false);
     }
   }
 
@@ -107,6 +111,7 @@ export function ShotlistStage({
   async function refine() {
     if (!scriptId || !episodeNo || !suggestion.trim()) return;
     setRefining(true);
+    onBusyChange?.(true);
     try {
       const res = await fetch("/api/prompt-studio/shotlist/refine", {
         method: "POST",
@@ -125,6 +130,7 @@ export function ShotlistStage({
       );
     } finally {
       setRefining(false);
+      onBusyChange?.(false);
     }
   }
 
@@ -137,6 +143,7 @@ export function ShotlistStage({
     )
       return;
     setRefining(true);
+    onBusyChange?.(true);
     try {
       const res = await fetch("/api/prompt-studio/shotlist/refine", {
         method: "POST",
@@ -152,6 +159,7 @@ export function ShotlistStage({
       toast.success(`场「${scene}」已按「${style}」重新设计（消耗 ${data.credits} 积分）`);
     } finally {
       setRefining(false);
+      onBusyChange?.(false);
     }
   }
 
