@@ -72,6 +72,7 @@ export async function POST(req: Request, { params }: Params) {
         episodeContent: ep?.content,
         assetBriefs,
         stillPrompt: target === "video" ? shot.stillPrompt : undefined,
+        directorStyle: (shot.params as { directorStyle?: string } | null)?.directorStyle,
         refine,
         spec: {
           tier: project.tier,

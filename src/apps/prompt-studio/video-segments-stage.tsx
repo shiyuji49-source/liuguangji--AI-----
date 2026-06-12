@@ -2,12 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wand2, RefreshCw, Copy, Save, Loader2, Film, Scissors, Trash2 } from "lucide-react";
+import { Wand2, RefreshCw, Copy, Save, Loader2, Film, Scissors, Trash2, MessageSquarePlus, Send, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import type { Shot } from "./types";
 
 export type VideoSegment = {
@@ -87,12 +88,12 @@ export function VideoSegmentsStage({
     }
   }
 
-  async function generateOne(seg: VideoSegment): Promise<boolean> {
+  async function generateOne(seg: VideoSegment, refine?: string): Promise<boolean> {
     setSegment(seg.id, { state: "generating" });
     const res = await fetch(`/api/prompt-studio/segments/${seg.id}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(refine ? { refine } : {}),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -103,8 +104,8 @@ export function VideoSegmentsStage({
     return true;
   }
 
-  async function handleOne(seg: VideoSegment) {
-    const ok = await generateOne(seg);
+  async function handleOne(seg: VideoSegment, refine?: string) {
+    const ok = await generateOne(seg, refine);
     if (ok) router.refresh();
     else toast.error("生成失败（余额不足或服务异常）");
   }
@@ -175,6 +176,16 @@ export function VideoSegmentsStage({
             )}
           </Button>
         )}
+        {segments.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-8" asChild>
+            <a
+              href={`/api/projects/${projectId}/export?type=segments&scriptId=${scriptId}&episodeNo=${episodeNo}`}
+              download
+            >
+              <Download className="size-3.5" /> 导出 Excel
+            </a>
+          </Button>
+        )}
         <span className="ml-auto text-xs text-muted-foreground">
           {segments.length > 0
             ? `${segments.length} 个片段（${shots.length} 镜合并）· ${segments.filter((s) => s.state === "done").length} 已生成`
@@ -196,7 +207,7 @@ export function VideoSegmentsStage({
               key={seg.id}
               segment={seg}
               shots={shots}
-              onGenerate={() => handleOne(seg)}
+              onGenerate={(refine) => handleOne(seg, refine)}
               onEdit={async (text) => {
                 setSegment(seg.id, { prompt: text });
                 await fetch(`/api/prompt-studio/segments/${seg.id}`, {
@@ -223,11 +234,13 @@ function SegmentCard({
 }: {
   segment: VideoSegment;
   shots: Shot[];
-  onGenerate: () => void;
+  onGenerate: (refine?: string) => void;
   onEdit: (text: string) => void;
   onDelete: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineText, setRefineText] = useState("");
   const st = STATE_LABEL[segment.state];
   const busy = segment.state === "generating";
   const memberShots = shots.filter((s) => (segment.shotNos ?? []).includes(s.shotNo));
@@ -305,7 +318,7 @@ function SegmentCard({
               const v = ref.current?.value ?? "";
               if (v !== (segment.prompt ?? "")) onEdit(v);
             }}
-            className="min-h-40 text-sm leading-6"
+            className="max-h-96 min-h-40 resize-y overflow-y-auto text-sm leading-6"
           />
         ) : segment.state === "failed" ? (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -318,7 +331,7 @@ function SegmentCard({
         )}
 
         <div className="flex flex-wrap items-center gap-1">
-          <Button variant="outline" size="sm" className="h-7" onClick={onGenerate} disabled={busy}>
+          <Button variant="outline" size="sm" className="h-7" onClick={() => onGenerate()} disabled={busy}>
             {busy ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : segment.prompt ? (
@@ -344,6 +357,9 @@ function SegmentCard({
               <Button variant="ghost" size="sm" className="h-7" onClick={saveArtifact}>
                 <Save className="size-3.5" /> 存为产物
               </Button>
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => setRefineOpen((v) => !v)} disabled={busy}>
+                <MessageSquarePlus className="size-3.5" /> 改
+              </Button>
             </>
           )}
           {typeof segment.params?.credits === "number" && (
@@ -359,6 +375,36 @@ function SegmentCard({
             <Trash2 className="size-3.5" />
           </Button>
         </div>
+
+        {refineOpen && (
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={refineText}
+              onChange={(e) => setRefineText(e.target.value)}
+              placeholder="说出修改要求，按要求重新生成本片段提示词（如：第二镜运镜改环绕 / 微表演加哭腔）"
+              className="h-8 text-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && refineText.trim() && !busy) {
+                  onGenerate(refineText.trim());
+                  setRefineOpen(false);
+                  setRefineText("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              disabled={!refineText.trim() || busy}
+              onClick={() => {
+                onGenerate(refineText.trim());
+                setRefineOpen(false);
+                setRefineText("");
+              }}
+            >
+              <Send className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wand2, ListPlus, Loader2 } from "lucide-react";
+import { Wand2, ListPlus, Loader2, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,9 +67,13 @@ export function AssetsStage({
     }
   }
 
-  async function generateOne(id: string): Promise<boolean> {
+  async function generateOne(id: string, refine?: string): Promise<boolean> {
     setItems((arr) => arr.map((it) => (it.id === id ? { ...it, state: "generating" } : it)));
-    const res = await fetch(`/api/prompt-studio/items/${id}/generate`, { method: "POST" });
+    const res = await fetch(`/api/prompt-studio/items/${id}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(refine ? { refine } : {}),
+    });
     const data = await res.json();
     if (!res.ok) {
       setItems((arr) =>
@@ -85,8 +89,8 @@ export function AssetsStage({
     return true;
   }
 
-  async function handleGenerateOne(id: string) {
-    const ok = await generateOne(id);
+  async function handleGenerateOne(id: string, refine?: string) {
+    const ok = await generateOne(id, refine);
     if (ok) router.refresh();
     else toast.error("生成失败（余额不足或服务异常）");
   }
@@ -175,6 +179,13 @@ export function AssetsStage({
             )}
           </Button>
         )}
+        {items.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-8" asChild>
+            <a href={`/api/projects/${projectId}/export?type=assets`} download>
+              <Download className="size-3.5" /> 导出 Excel
+            </a>
+          </Button>
+        )}
         <span className="ml-auto text-xs text-muted-foreground">
           {items.length > 0
             ? `${items.filter((i) => i.state === "done").length}/${items.length} 已生成`
@@ -216,7 +227,7 @@ export function AssetsStage({
               key={item.id}
               item={item}
               showKind
-              onGenerate={() => handleGenerateOne(item.id)}
+              onGenerate={(refine) => handleGenerateOne(item.id, refine)}
               onEdit={(text) => editItem(item.id, text)}
               onSave={() => saveArtifact(item)}
               onDelete={() => deleteItem(item.id)}

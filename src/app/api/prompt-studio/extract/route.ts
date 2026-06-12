@@ -59,32 +59,41 @@ export async function POST(req: Request) {
       return Response.json({ error: "未能从剧本提取到条目，请检查剧本内容" }, { status: 422 });
     }
 
-    // 非破坏式：同范围已存在的 name 跳过，只插入新条目（保留已生成的卡）
+    // 非破坏式：同范围已存在的 name 跳过插入（保留已生成的卡），但补写出现集数标注
     const scopeWhere = [
       eq(promptItems.projectId, projectId),
       eq(promptItems.workspace, workspace as Workspace),
     ];
     if (episodeNo) scopeWhere.push(eq(promptItems.episodeNo, episodeNo));
     const existing = await db
-      .select({ name: promptItems.name })
+      .select({ id: promptItems.id, name: promptItems.name })
       .from(promptItems)
       .where(and(...scopeWhere));
-    const existingNames = new Set(existing.map((e) => e.name));
+    const existingByName = new Map(existing.map((e) => [e.name, e.id]));
 
     const toInsert = extracted
-      .filter((x) => !existingNames.has(x.name))
+      .filter((x) => !existingByName.has(x.name))
       .map((x, i) => ({
         projectId,
         workspace: workspace as Workspace,
         kind: x.kind,
         name: x.name,
         brief: x.brief,
+        episodes: x.episodes.length ? x.episodes : null,
         episodeNo: episodeNo ?? null,
         scriptId,
         sortIndex: existing.length + i,
         createdBy: user.id,
       }));
     if (toInsert.length > 0) await db.insert(promptItems).values(toInsert);
+
+    // 已存在条目：仅更新集数标注（不动提示词）
+    for (const x of extracted) {
+      const id = existingByName.get(x.name);
+      if (id && x.episodes.length) {
+        await db.update(promptItems).set({ episodes: x.episodes }).where(eq(promptItems.id, id));
+      }
+    }
 
     const rows = await listScopeItems(projectId, workspace as Workspace, episodeNo);
     return Response.json({ items: rows, added: toInsert.length });

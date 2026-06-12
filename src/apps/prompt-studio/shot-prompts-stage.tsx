@@ -2,12 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wand2, RefreshCw, Copy, Save, Loader2, Film, Camera } from "lucide-react";
+import { Wand2, RefreshCw, Copy, Save, Loader2, Film, Camera, MessageSquarePlus, Send, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import type { Shot } from "./types";
 
 const STATE_LABEL: Record<Shot["stillState"], { text: string; cls: string }> = {
@@ -49,12 +50,12 @@ export function ShotPromptsStage({
     onShotsChange(shots.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
-  async function generateOne(shot: Shot): Promise<boolean> {
+  async function generateOne(shot: Shot, refine?: string): Promise<boolean> {
     setShot(shot.id, { [stateKey]: "generating" } as Partial<Shot>);
     const res = await fetch(`/api/prompt-studio/shots/${shot.id}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target }),
+      body: JSON.stringify({ target, refine }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -68,8 +69,8 @@ export function ShotPromptsStage({
     return true;
   }
 
-  async function handleOne(shot: Shot) {
-    const ok = await generateOne(shot);
+  async function handleOne(shot: Shot, refine?: string) {
+    const ok = await generateOne(shot, refine);
     if (ok) router.refresh();
     else toast.error("生成失败（余额不足或服务异常）");
   }
@@ -142,6 +143,16 @@ export function ShotPromptsStage({
             只看需出静帧的镜（{tier} 级取舍，可在分镜表改）
           </label>
         )}
+        {shots.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-8" asChild>
+            <a
+              href={`/api/projects/${shots[0].projectId}/export?type=${target === "still" ? "stills" : "segments"}&scriptId=${shots[0].scriptId}&episodeNo=${shots[0].episodeNo}`}
+              download
+            >
+              <Download className="size-3.5" /> 导出 Excel
+            </a>
+          </Button>
+        )}
         <span className="ml-auto text-xs text-muted-foreground">
           {relevant.filter((s) => s[stateKey] === "done").length}/{relevant.length} 已生成
         </span>
@@ -153,7 +164,7 @@ export function ShotPromptsStage({
             key={shot.id}
             shot={shot}
             target={target}
-            onGenerate={() => handleOne(shot)}
+            onGenerate={(refine) => handleOne(shot, refine)}
             onEdit={async (text) => {
               setShot(shot.id, { [promptKey]: text } as Partial<Shot>);
               await fetch(`/api/prompt-studio/shots/${shot.id}`, {
@@ -177,10 +188,12 @@ function ShotPromptCard({
 }: {
   shot: Shot;
   target: "still" | "video";
-  onGenerate: () => void;
+  onGenerate: (refine?: string) => void;
   onEdit: (text: string) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineText, setRefineText] = useState("");
   const state = target === "still" ? shot.stillState : shot.videoState;
   const prompt = target === "still" ? shot.stillPrompt : shot.videoPrompt;
   const error = target === "still" ? shot.stillError : shot.videoError;
@@ -257,7 +270,7 @@ function ShotPromptCard({
               const v = ref.current?.value ?? "";
               if (v !== (prompt ?? "")) onEdit(v);
             }}
-            className="min-h-32 text-sm leading-6"
+            className="max-h-80 min-h-32 resize-y overflow-y-auto text-sm leading-6"
           />
         ) : state === "failed" ? (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -270,7 +283,7 @@ function ShotPromptCard({
         )}
 
         <div className="flex flex-wrap items-center gap-1">
-          <Button variant="outline" size="sm" className="h-7" onClick={onGenerate} disabled={busy}>
+          <Button variant="outline" size="sm" className="h-7" onClick={() => onGenerate()} disabled={busy}>
             {busy ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : prompt ? (
@@ -296,12 +309,45 @@ function ShotPromptCard({
               <Button variant="ghost" size="sm" className="h-7" onClick={saveArtifact}>
                 <Save className="size-3.5" /> 存为产物
               </Button>
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => setRefineOpen((v) => !v)} disabled={busy}>
+                <MessageSquarePlus className="size-3.5" /> 改
+              </Button>
             </>
           )}
           {typeof credits === "number" && (
             <span className="ml-auto text-xs text-muted-foreground">消耗 {credits} 积分</span>
           )}
         </div>
+
+        {refineOpen && (
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={refineText}
+              onChange={(e) => setRefineText(e.target.value)}
+              placeholder="说出修改要求，按要求重新生成本镜提示词"
+              className="h-8 text-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && refineText.trim() && !busy) {
+                  onGenerate(refineText.trim());
+                  setRefineOpen(false);
+                  setRefineText("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              disabled={!refineText.trim() || busy}
+              onClick={() => {
+                onGenerate(refineText.trim());
+                setRefineOpen(false);
+                setRefineText("");
+              }}
+            >
+              <Send className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

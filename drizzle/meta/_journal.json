@@ -50,6 +50,13 @@
       "when": 1781184966681,
       "tag": "0006_perfect_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781242311605,
+      "tag": "0007_blue_puma",
+      "breakpoints": true
     }
   ]
 }

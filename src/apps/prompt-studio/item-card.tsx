@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Wand2, RefreshCw, Save, Trash2, Copy, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Wand2, RefreshCw, Save, Trash2, Copy, Loader2, ChevronDown, ChevronRight, MessageSquarePlus, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export type PromptItem = {
   kind: string;
   name: string;
   brief: string;
+  episodes?: number[] | null;
   episodeNo: number | null;
   promptText: string | null;
   state: "empty" | "generating" | "done" | "failed";
@@ -39,7 +41,7 @@ export function PromptItemCard({
 }: {
   item: PromptItem;
   showKind: boolean;
-  onGenerate: () => void;
+  onGenerate: (refine?: string) => void;
   onEdit: (text: string) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -48,6 +50,8 @@ export function PromptItemCard({
   // 避免在渲染/effect 里 setState 同步外部值
   const ref = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(true);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineText, setRefineText] = useState("");
   const st = STATE_LABEL[item.state];
   const busy = item.state === "generating";
   const hasText = !!item.promptText;
@@ -65,6 +69,11 @@ export function PromptItemCard({
             </Badge>
           )}
           <span className="truncate text-sm font-medium">{item.name}</span>
+          {!!item.episodes?.length && (
+            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] text-muted-foreground" title="出现集数">
+              {epRangeLabel(item.episodes)}
+            </Badge>
+          )}
           <span className={`ml-auto text-xs ${st.cls}`}>
             {busy && <Loader2 className="mr-1 inline size-3 animate-spin" />}
             {st.text}
@@ -84,7 +93,7 @@ export function PromptItemCard({
                   const v = ref.current?.value ?? "";
                   if (v !== (item.promptText ?? "")) onEdit(v);
                 }}
-                className="min-h-32 text-sm leading-6"
+                className="max-h-80 min-h-32 resize-y overflow-y-auto text-sm leading-6"
                 placeholder="生成的提示词将显示在这里，可直接编辑"
               />
             ) : item.state === "failed" ? (
@@ -98,7 +107,7 @@ export function PromptItemCard({
             )}
 
             <div className="flex flex-wrap items-center gap-1">
-              <Button variant="outline" size="sm" className="h-7" onClick={onGenerate} disabled={busy}>
+              <Button variant="outline" size="sm" className="h-7" onClick={() => onGenerate()} disabled={busy}>
                 {busy ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : hasText ? (
@@ -124,6 +133,15 @@ export function PromptItemCard({
                   <Button variant="ghost" size="sm" className="h-7" onClick={onSave}>
                     <Save className="size-3.5" /> 存为产物
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    onClick={() => setRefineOpen((v) => !v)}
+                    disabled={busy}
+                  >
+                    <MessageSquarePlus className="size-3.5" /> 改
+                  </Button>
                 </>
               )}
               {typeof item.params?.credits === "number" && (
@@ -139,9 +157,58 @@ export function PromptItemCard({
                 <Trash2 className="size-3.5" />
               </Button>
             </div>
+
+            {refineOpen && (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={refineText}
+                  onChange={(e) => setRefineText(e.target.value)}
+                  placeholder="说出修改要求，按要求重新生成（如：运镜再克制一点 / 加一句台词）"
+                  className="h-8 text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && refineText.trim() && !busy) {
+                      onGenerate(refineText.trim());
+                      setRefineOpen(false);
+                      setRefineText("");
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  className="h-8 shrink-0"
+                  disabled={!refineText.trim() || busy}
+                  onClick={() => {
+                    onGenerate(refineText.trim());
+                    setRefineOpen(false);
+                    setRefineText("");
+                  }}
+                >
+                  <Send className="size-3.5" />
+                </Button>
+              </div>
+            )}
           </>
         )}
       </CardContent>
     </Card>
   );
+}
+
+/** 集数折叠标注：1,2,3,5 → 1-3、5 集 */
+function epRangeLabel(arr: number[]): string {
+  const parts: string[] = [];
+  let s = arr[0];
+  let p = arr[0];
+  for (let i = 1; i <= arr.length; i++) {
+    if (i < arr.length && arr[i] === p + 1) {
+      p = arr[i];
+      continue;
+    }
+    parts.push(s === p ? `${s}` : `${s}-${p}`);
+    if (i < arr.length) {
+      s = arr[i];
+      p = arr[i];
+    }
+  }
+  return `第${parts.join("、")}集`;
 }

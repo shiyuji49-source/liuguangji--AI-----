@@ -9,6 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
   sceneLabel: z.string().max(60).optional(),
+  shotFunction: z.string().max(20).optional(),
   summary: z.string().max(500).optional(),
   shotType: z.string().max(30).optional(),
   cameraMove: z.string().max(60).optional(),

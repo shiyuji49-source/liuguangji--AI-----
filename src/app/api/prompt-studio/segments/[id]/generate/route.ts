@@ -91,6 +91,7 @@ export async function POST(req: Request, { params }: Params) {
           .map((s) => ({ shotNo: s.shotNo, prompt: s.stillPrompt! })),
         episodeContent: ep?.content,
         assetBriefs,
+        directorStyle: (memberShots[0]?.params as { directorStyle?: string } | null)?.directorStyle,
         refine: refineText,
         spec: {
           tier: project.tier,

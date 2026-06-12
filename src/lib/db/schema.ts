@@ -187,6 +187,7 @@ export const promptItems = pgTable(
     kind: text("kind").notNull(), // 资产: 人物|服装|道具|场景|群演；静帧:静帧；视频:视频
     name: text("name").notNull(), // 资产名 / 镜头标签（如 @木兰 / 第3集-镜2）
     brief: text("brief").notNull().default(""), // 提取出的一句话描述/镜头摘要
+    episodes: jsonb("episodes"), // 资产：出现的集数 [1,3,5]（审核/归纳用）
     episodeNo: integer("episode_no"), // 静帧/视频：来源集
     scriptId: uuid("script_id").references(() => scripts.id),
     promptText: text("prompt_text"), // 生成的提示词
@@ -220,6 +221,7 @@ export const shots = pgTable(
     shotNo: integer("shot_no").notNull(), // 镜号（排序）
     sceneLabel: text("scene_label").notNull().default(""), // 场（如 3-1 破庙外·黄昏）
     summary: text("summary").notNull().default(""), // 画面/动作摘要
+    shotFunction: text("shot_function").notNull().default(""), // 镜头类型：建立/对话/反应/插入/空镜/POV/转场/动作
     shotType: text("shot_type").notNull().default(""), // 景别
     cameraMove: text("camera_move").notNull().default(""), // 运镜
     dialogue: text("dialogue").notNull().default(""), // 台词/声音

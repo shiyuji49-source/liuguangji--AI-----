@@ -10,7 +10,7 @@ import type { ProjectTier } from "../db/schema";
  */
 
 export type Workspace = "资产" | "静帧" | "视频";
-export type ExtractedItem = { kind: string; name: string; brief: string };
+export type ExtractedItem = { kind: string; name: string; brief: string; episodes: number[] };
 export type ProjectSpec = {
   tier: ProjectTier;
   aspect: string;
@@ -27,7 +27,7 @@ const STILL_MAX_OUT = 10000;
 
 function extractInstruction(workspace: Workspace, episodeLabel?: string): string {
   if (workspace === "资产") {
-    return '通读下面的剧本，提取需要做视觉资产的条目，按类型分类：人物、服装、道具、场景、群演。每条给 kind（五选一）、name（@名，如 @木兰）、brief（一句话外观/身份描述）。只输出 JSON 数组，形如 [{"kind":"人物","name":"@木兰","brief":"30岁女将军，英气逼人"}]，不要输出任何额外文字、解释或代码块标注。';
+    return '通读下面的剧本，提取需要做视觉资产的条目，按类型分类：人物、服装、道具、场景、群演。每条给 kind（五选一）、name（@名，如 @木兰）、brief（一句话外观/身份描述）、episodes（该资产出现的集数数组，按剧本中"第X集"标记判断，如 [1,3,5]；通篇出现可写全部集号）。只输出 JSON 数组，形如 [{"kind":"人物","name":"@木兰","brief":"30岁女将军，英气逼人","episodes":[1,2,3]}]，不要输出任何额外文字、解释或代码块标注。';
   }
   if (workspace === "静帧") {
     return `读下面的${episodeLabel ?? "本集"}剧本，按场景拆出关键帧/分镜镜头列表（一镜一条）。每条给 name（镜头标签，如 镜1）、brief（一句话画面摘要）。只输出 JSON 数组 [{"kind":"静帧","name":"镜1","brief":"破庙外黄昏，木兰持刀对峙刺客"}]，不要任何额外文字。`;
@@ -59,6 +59,17 @@ function parseItems(text: string, workspace: Workspace): ExtractedItem[] {
           kind,
           name: String(x.name).trim().slice(0, 80),
           brief: typeof x.brief === "string" ? x.brief.trim().slice(0, 300) : "",
+          episodes: Array.isArray(x.episodes)
+            ? [
+                ...new Set(
+                  (x.episodes as unknown[])
+                    .map((n) => Number(n))
+                    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 2000)
+                ),
+              ]
+                .sort((a, b) => a - b)
+                .slice(0, 500)
+            : [],
         };
       })
       .slice(0, 120);
@@ -171,6 +182,7 @@ export function artifactTypeFor(workspace: Workspace): string {
 export type ExtractedShot = {
   shotNo: number;
   sceneLabel: string;
+  shotFunction: string;
   summary: string;
   shotType: string;
   cameraMove: string;
@@ -220,6 +232,7 @@ function parseShots(text: string): ExtractedShot[] {
         return {
           shotNo: Number.isFinite(Number(x.shotNo)) ? Number(x.shotNo) : i + 1,
           sceneLabel: String(x.sceneLabel ?? "").slice(0, 60),
+          shotFunction: String(x.shotFunction ?? "").slice(0, 20),
           summary: String(x.summary ?? "").slice(0, 500),
           shotType: String(x.shotType ?? "").slice(0, 30),
           cameraMove: String(x.cameraMove ?? "").slice(0, 60),
@@ -243,6 +256,7 @@ export async function buildShotlist(opts: {
   episodeNo: number;
   spec: ProjectSpec;
   knownAssets: string[]; // 阶段①已提取的资产名，供 assetRefs 对齐
+  directorStyle?: string; // 导演风格预设（DIRECTOR_STYLES.md），默认"标准"
 }): Promise<{ shots: ExtractedShot[]; credits: number }> {
   const skill = getSkillPrompt("镜头设计"); // 视听语言/découpage：分镜表的大脑
   const note = buildRuntimeNote({
@@ -256,6 +270,9 @@ export async function buildShotlist(opts: {
   const tier = opts.spec.tier;
   const userText = [
     `【任务】用你 skill 的视听语言/découpage 方法，把下面这一集设计成有电影感的分镜表（不是照剧本平铺、不是台词字幕轨）。你是导演，不是对白记录员。`,
+    opts.directorStyle && opts.directorStyle !== "标准"
+      ? `【导演风格（用户选定，整集一锁到底）】本集按 skill 风格预设库中的「${opts.directorStyle}」执行：运镜倾向、景别分布、构图语言、节奏、固定/运动比例全部按该预设；summary 里写明每镜的风格执行点（供静帧/视频继承）；预设与通用法则冲突时预设优先，但轴线/视线/反应镜头原则不可破。`
+      : ``,
     `【硬要求（务必做到，否则就是 low）】`,
     `1. 每场戏先给一个 master/建立镜交代空间；之后按戏剧节拍 beat 分切，镜头数由 beat 决定，不由台词行数决定。`,
     `2. 对白场景必须有【听者反应镜头】：谁的处境因这句话改变就拍谁——皇上/上位者没说话也要给反应镜头（沉默承载戏）。重磅台词后给反应停留（更长时长），别只拍说话的人。`,
@@ -265,7 +282,8 @@ export async function buildShotlist(opts: {
     opts.spec.aspect === "9:16"
       ? `6. 竖屏 9:16：少用横向双人全景，多用过肩/单人近景/纵向分层；大殿戏用纵深消失点构图。`
       : ``,
-    `每镜一条 JSON：{"shotNo":序号,"sceneLabel":"场（如 1-1 皇城大街·日·外）","summary":"画面/动作摘要（含镜头意图，如『反应：皇帝眼神由疑转杀』）","shotType":"景别","cameraMove":"运镜","dialogue":"台词或声音（无对白写环境音/留空）","durationSec":预估秒数或null,"assetRefs":["@资产名"...],"needStill":是否值得出静帧}`,
+    `每镜一条 JSON：{"shotNo":序号,"sceneLabel":"场（如 1-1 皇城大街·日·外）","shotFunction":"镜头类型","summary":"画面/动作摘要（含镜头意图，如『反应：皇帝眼神由疑转杀』）","shotType":"景别","cameraMove":"运镜","dialogue":"台词或声音（无对白写环境音/留空）","durationSec":预估秒数或null,"assetRefs":["@资产名"...],"needStill":是否值得出静帧}`,
+    `shotFunction 用规范镜头类型词（审核镜头衔接逻辑用）：建立/主镜/对话/反应/插入/空镜/POV/转场/动作/蒙太奇。`,
     `shotType 用规范景别词：远景/全景/中景/中近景/近景/特写/大特写/微距。cameraMove 写具体运镜（固定/手持呼吸/缓慢推近/拉远/横移/摇/升降/环绕/俯拍冻结/同轴猛推等），禁写 zoom。`,
     `durationSec（⚠️宁长勿短，估短了视频会像倍速播放）：有台词的镜 = 纯台词字数 ÷ 3.5（中文口播约 3-4 字/秒）+ 2 秒表演拍，向上取整（例：14 字台词 ≈ 6 秒，30 字 ≈ 11 秒）；闪现建立 1 秒内；无台词反应（带情绪弧）5-10；插入/空镜 1-2；情绪特写完整弧 8-15。单镜不超过 15 秒。`,
     `needStill（是否值得出静帧图作强控锚）：${tier === "B" ? "B 级跑量剧——只给复杂构图/多人/难控动作/关键情绪/会被反复参考的镜标 true，其余 false（直接进视频）" : `${tier} 级精品——构图复杂或关键情绪镜标 true，简单过场标 false`}。`,
@@ -306,11 +324,69 @@ export async function buildShotlist(opts: {
   return { shots: parseShots(text), credits };
 }
 
+/** 按用户修改建议修订现有分镜表（底部对话工具）：全表输出，未涉及的镜原样保留 */
+export async function refineShotlist(opts: {
+  userId: string;
+  currentShots: ExtractedShot[];
+  suggestion: string;
+  episodeNo: number;
+  spec: ProjectSpec;
+  directorStyle?: string;
+}): Promise<{ shots: ExtractedShot[]; credits: number }> {
+  const skill = getSkillPrompt("镜头设计");
+  const note = buildRuntimeNote({
+    tier: opts.spec.tier,
+    aspect: opts.spec.aspect,
+    productionType: opts.spec.productionType,
+    styleGenre: opts.spec.styleGenre,
+    episode: opts.episodeNo,
+  });
+  const userText = [
+    `【任务】按用户的修改建议修订下面的分镜表（用你 skill 的视听语言法则执行）。`,
+    `【用户修改建议】${opts.suggestion}`,
+    opts.directorStyle && opts.directorStyle !== "标准"
+      ? `【导演风格】本集按「${opts.directorStyle}」预设，修订须保持风格一致。`
+      : ``,
+    `【规则】1. 输出修订后的**完整分镜表**（全表 JSON，与原表同构字段：shotNo/sceneLabel/shotFunction/summary/shotType/cameraMove/dialogue/durationSec/assetRefs/needStill）。2. 建议未涉及的镜**原样保留**（字段一字不改）。3. 可增/删/改镜，镜号重排为连续序号。4. 台词镜时长=纯台词字数÷3.5+2 秒，宁长勿短。5. 只输出 JSON 数组，不要任何额外文字。`,
+    note,
+    `----- 当前分镜表 -----`,
+    JSON.stringify(opts.currentShots),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const messages: ModelMessage[] = [
+    {
+      role: "system",
+      content: skill,
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    },
+    { role: "user", content: userText },
+  ];
+  const est = await estimateLlmMaxCredits(MODEL_MAIN(), skill.length + userText.length, SHOTLIST_MAX_OUT);
+  await precheck(opts.userId, est);
+
+  const { text, usage, providerMetadata } = await generateText({
+    model: mainModel(),
+    messages,
+    maxOutputTokens: SHOTLIST_MAX_OUT,
+    providerOptions: { anthropic: { metadata: { userId: opts.userId } } },
+  });
+  const { credits } = await chargeLlm({
+    userId: opts.userId,
+    model: MODEL_MAIN(),
+    usage: toLlmUsage(usage, providerMetadata as Record<string, Record<string, unknown>> | undefined),
+    ref: { appKey: "prompt-studio", note: `修订分镜表-第${opts.episodeNo}集` },
+  });
+  return { shots: parseShots(text), credits };
+}
+
 // ===== 阶段③/④：逐镜生成静帧 / 视频提示词 =====
 
 export type ShotInfo = {
   shotNo: number;
   sceneLabel: string;
+  shotFunction?: string;
   summary: string;
   shotType: string;
   cameraMove: string;
@@ -526,6 +602,7 @@ export async function generateSegmentPrompt(opts: {
   episodeContent?: string;
   assetBriefs?: { name: string; brief: string }[];
   spec: ProjectSpec;
+  directorStyle?: string; // 本集分镜表选定的导演风格（运镜执行随之）
   refine?: string;
 }): Promise<{ promptText: string; credits: number; usage: LlmUsage }> {
   const skill = getSkillPrompt("视频");
@@ -569,6 +646,11 @@ export async function generateSegmentPrompt(opts: {
       `【字数预算（硬限）】全文 ≤3000 字符、纯中文、台词用剧本原文。复杂反应镜该长就长（微操表演是质量来源），但超预算时按此序压缩：背景描述 → 重复的禁则（合并成一组）→ handle 里参考图已锁的纯外观细节——**绝不压缩微表演与空间布局**。只输出提示词本身，不输出任何解释或检查表。`,
     ].join("\n")
   );
+  if (opts.directorStyle && opts.directorStyle !== "标准") {
+    parts.push(
+      `【导演风格】本集分镜按「${opts.directorStyle}」风格设计，运镜执行、构图语言、光色倾向须与之一致（分镜表 summary 里已写明各镜风格执行点，照做不改）。`
+    );
+  }
   if (opts.refine) parts.push(`【额外要求】${opts.refine}`);
   if (note) parts.push(note);
   const userText = parts.join("\n\n");
@@ -613,6 +695,7 @@ export async function generateShotPrompt(opts: {
   /** 已生成的静帧提示词（视频阶段作画面锚参考） */
   stillPrompt?: string | null;
   spec: ProjectSpec;
+  directorStyle?: string; // 本集分镜表选定的导演风格（构图/色彩随之）
   refine?: string;
 }): Promise<{ promptText: string; credits: number; usage: LlmUsage }> {
   const skillKey = opts.target === "still" ? "静帧" : "视频";
@@ -658,6 +741,11 @@ export async function generateShotPrompt(opts: {
           `5. 单条 ≤15 秒、≤3000 字符、纯中文。`,
         ].join("\n")
   );
+  if (opts.directorStyle && opts.directorStyle !== "标准") {
+    parts.push(
+      `【导演风格】本集分镜按「${opts.directorStyle}」风格设计，构图语言、色彩光线倾向、机位选择须与之一致（分镜表 summary 已写明本镜风格执行点，照做不改）。`
+    );
+  }
   if (opts.refine) parts.push(`【额外要求】${opts.refine}`);
   if (note) parts.push(note);
   const userText = parts.join("\n\n");

@@ -5,6 +5,7 @@ export type Shot = {
   episodeNo: number;
   shotNo: number;
   sceneLabel: string;
+  shotFunction?: string;
   summary: string;
   shotType: string;
   cameraMove: string;

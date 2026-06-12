@@ -18,10 +18,11 @@ export async function POST(req: Request) {
         scriptId: z.string().uuid(),
         episodeNo: z.number().int().positive(),
         replace: z.boolean().default(false),
+        directorStyle: z.string().max(20).optional(),
       })
       .safeParse(body);
     if (!parsed.success) return Response.json({ error: "参数不正确" }, { status: 400 });
-    const { projectId, scriptId, episodeNo, replace } = parsed.data;
+    const { projectId, scriptId, episodeNo, replace, directorStyle } = parsed.data;
 
     const { user, project, projectRole } = await requireProjectMember(projectId);
     assertWorkspaceAccess(projectRole, "静帧"); // 分镜表属于分镜师/导演的工作区
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
       episodeContent: ep.content,
       episodeNo,
       knownAssets: assets.map((a) => a.name),
+      directorStyle,
       spec: {
         tier: project.tier,
         aspect: spec?.aspect ?? "9:16",
@@ -81,6 +83,7 @@ export async function POST(req: Request) {
         episodeNo,
         shotNo: no,
         sceneLabel: s.sceneLabel,
+        shotFunction: s.shotFunction,
         summary: s.summary,
         shotType: s.shotType,
         cameraMove: s.cameraMove,
@@ -88,6 +91,7 @@ export async function POST(req: Request) {
         durationSec: s.durationSec,
         assetRefs: s.assetRefs,
         needStill: s.needStill,
+        params: directorStyle && directorStyle !== "标准" ? { directorStyle } : null,
         createdBy: user.id,
       };
     });

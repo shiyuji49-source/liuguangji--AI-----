@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Clapperboard, Loader2, Plus, Pencil, Trash2 } from "lucide-react";
+import { Clapperboard, Loader2, Plus, Pencil, Trash2, Download, Send } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,9 @@ export function ShotlistStage({
 }) {
   const [building, setBuilding] = useState(false);
   const [editing, setEditing] = useState<Shot | null>(null);
+  const [directorStyle, setDirectorStyle] = useState("标准");
+  const [suggestion, setSuggestion] = useState("");
+  const [refining, setRefining] = useState(false);
 
   async function build(replace: boolean) {
     if (!scriptId || !episodeNo) {
@@ -51,7 +55,7 @@ export function ShotlistStage({
       const res = await fetch("/api/prompt-studio/shotlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, scriptId, episodeNo, replace }),
+        body: JSON.stringify({ projectId, scriptId, episodeNo, replace, directorStyle }),
       });
       const data = await res.json();
       if (res.status === 409 && data.needConfirm) {
@@ -100,6 +104,30 @@ export function ShotlistStage({
     setEditing(data.shot);
   }
 
+  async function refine() {
+    if (!scriptId || !episodeNo || !suggestion.trim()) return;
+    setRefining(true);
+    try {
+      const res = await fetch("/api/prompt-studio/shotlist/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, scriptId, episodeNo, suggestion: suggestion.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "修订失败");
+        return;
+      }
+      onShotsChange(data.shots);
+      setSuggestion("");
+      toast.success(
+        `分镜表已按建议修订：${data.shots.length} 镜（未变动的 ${data.kept} 镜保留了已生成提示词，消耗 ${data.credits} 积分）`
+      );
+    } finally {
+      setRefining(false);
+    }
+  }
+
   if (!episodeNo) {
     return (
       <Card>
@@ -113,14 +141,36 @@ export function ShotlistStage({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+        <Select value={directorStyle} onValueChange={setDirectorStyle} disabled={building}>
+          <SelectTrigger className="h-8 w-36" title="导演风格：决定运镜/景别/构图/节奏的依据">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DIRECTOR_STYLES.map((d) => (
+              <SelectItem key={d.value} value={d.value}>
+                {d.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button size="sm" className="h-8" onClick={() => build(false)} disabled={building}>
           {building ? <Loader2 className="size-3.5 animate-spin" /> : <Clapperboard className="size-3.5" />}
           {shots.length > 0 ? "重新构建分镜表" : "构建分镜表"}
         </Button>
         {shots.length > 0 && (
-          <Button variant="outline" size="sm" className="h-8" onClick={addShot}>
-            <Plus className="size-3.5" /> 加一镜
-          </Button>
+          <>
+            <Button variant="outline" size="sm" className="h-8" onClick={addShot}>
+              <Plus className="size-3.5" /> 加一镜
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8" asChild>
+              <a
+                href={`/api/projects/${projectId}/export?type=shotlist&scriptId=${scriptId}&episodeNo=${episodeNo}`}
+                download
+              >
+                <Download className="size-3.5" /> 导出 Excel
+              </a>
+            </Button>
+          </>
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {shots.length > 0
@@ -143,6 +193,7 @@ export function ShotlistStage({
               <TableRow>
                 <TableHead className="w-12">镜号</TableHead>
                 <TableHead className="w-32">场</TableHead>
+                <TableHead className="w-16">类型</TableHead>
                 <TableHead>画面</TableHead>
                 <TableHead className="w-16">景别</TableHead>
                 <TableHead className="w-24">运镜</TableHead>
@@ -157,6 +208,13 @@ export function ShotlistStage({
                 <TableRow key={s.id} className={s.needStill ? "" : "opacity-55"}>
                   <TableCell>{s.shotNo}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.sceneLabel}</TableCell>
+                  <TableCell>
+                    {s.shotFunction && (
+                      <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${FN_COLORS[s.shotFunction] ?? ""}`}>
+                        {s.shotFunction}
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="min-w-64 max-w-96">
                     <div className="whitespace-normal break-words text-sm leading-5">{s.summary}</div>
                     {s.dialogue && (
@@ -205,6 +263,26 @@ export function ShotlistStage({
         </div>
       )}
 
+      {/* 底部对话工具：对分镜表提修改建议，按建议修订（未变动的镜保留已生成提示词） */}
+      {shots.length > 0 && (
+        <div className="glass sticky bottom-3 z-10 flex items-center gap-2 rounded-xl border px-3 py-2">
+          <Input
+            value={suggestion}
+            onChange={(e) => setSuggestion(e.target.value)}
+            disabled={refining}
+            placeholder="对分镜表提修改建议（如：第3场反应镜头太少 / 大殿戏改成黑泽明式轴线切 / 删掉镜12）"
+            className="h-9 border-0 bg-transparent text-sm focus-visible:ring-0"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && suggestion.trim() && !refining) void refine();
+            }}
+          />
+          <Button size="sm" className="h-9 shrink-0" onClick={refine} disabled={!suggestion.trim() || refining}>
+            {refining ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            按建议修订
+          </Button>
+        </div>
+      )}
+
       <ShotEditDialog
         shot={editing}
         onClose={() => setEditing(null)}
@@ -240,6 +318,7 @@ function ShotEditDialog({
 
 function ShotEditForm({ shot, onSave }: { shot: Shot; onSave: (patch: Partial<Shot>) => void }) {
   const [sceneLabel, setSceneLabel] = useState(shot.sceneLabel);
+  const [shotFunction, setShotFunction] = useState(shot.shotFunction ?? "");
   const [summary, setSummary] = useState(shot.summary);
   const [shotType, setShotType] = useState(shot.shotType);
   const [cameraMove, setCameraMove] = useState(shot.cameraMove);
@@ -253,6 +332,10 @@ function ShotEditForm({ shot, onSave }: { shot: Shot; onSave: (patch: Partial<Sh
         <div className="space-y-1.5">
           <Label>场</Label>
           <Input value={sceneLabel} onChange={(e) => setSceneLabel(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>镜头类型</Label>
+          <Input value={shotFunction} onChange={(e) => setShotFunction(e.target.value)} placeholder="建立/对话/反应/插入/空镜/POV…" />
         </div>
         <div className="space-y-1.5">
           <Label>景别</Label>
@@ -287,6 +370,7 @@ function ShotEditForm({ shot, onSave }: { shot: Shot; onSave: (patch: Partial<Sh
         onClick={() =>
           onSave({
             sceneLabel,
+            shotFunction,
             summary,
             shotType,
             cameraMove,
@@ -304,3 +388,24 @@ function ShotEditForm({ shot, onSave }: { shot: Shot; onSave: (patch: Partial<Sh
     </div>
   );
 }
+
+/** 导演风格预设（与 shot-design/references/DIRECTOR_STYLES.md 对应） */
+const DIRECTOR_STYLES = [
+  { value: "标准", label: "标准（类型片均衡）" },
+  { value: "华丽流动", label: "华丽流动（高运动感）" },
+  { value: "克制纪实", label: "克制纪实（贾樟柯式）" },
+  { value: "对称风格化", label: "对称风格化（韦斯·安德森式）" },
+  { value: "张力悬疑", label: "张力悬疑（希区柯克式）" },
+  { value: "抒情情绪", label: "抒情情绪（王家卫式）" },
+  { value: "黑泽明动力", label: "黑泽明动力（武戏史诗）" },
+];
+
+/** 镜头类型徽章配色（审衔接逻辑时一眼区分） */
+const FN_COLORS: Record<string, string> = {
+  反应: "border-primary/50 text-primary",
+  插入: "border-[--aurora-a]/50 text-[--aurora-a]",
+  空镜: "text-muted-foreground",
+  POV: "border-[--aurora-b]/50 text-[--aurora-b]",
+  建立: "border-foreground/30",
+  蒙太奇: "border-[--aurora-a]/50 text-[--aurora-a]",
+};
