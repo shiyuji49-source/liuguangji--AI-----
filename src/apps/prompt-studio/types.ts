@@ -19,5 +19,5 @@ export type Shot = {
   videoPrompt: string | null;
   videoState: "empty" | "generating" | "done" | "failed";
   videoError: string | null;
-  params: { stillCredits?: number; videoCredits?: number } | null;
+  params: { stillCredits?: number; directorStyle?: string; videoCredits?: number } | null;
 };

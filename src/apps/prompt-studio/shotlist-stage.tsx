@@ -128,6 +128,33 @@ export function ShotlistStage({
     }
   }
 
+  async function setSceneStyle(scene: string, style: string) {
+    if (!scriptId || !episodeNo) return;
+    if (
+      !confirm(
+        `把场「${scene}」按「${style}」风格重新设计？该场镜头会重排（变动镜的已生成提示词会清空，其他场不受影响）。`
+      )
+    )
+      return;
+    setRefining(true);
+    try {
+      const res = await fetch("/api/prompt-studio/shotlist/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, scriptId, episodeNo, sceneLabel: scene, style }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "场级风格调整失败");
+        return;
+      }
+      onShotsChange(data.shots);
+      toast.success(`场「${scene}」已按「${style}」重新设计（消耗 ${data.credits} 积分）`);
+    } finally {
+      setRefining(false);
+    }
+  }
+
   if (!episodeNo) {
     return (
       <Card>
@@ -204,8 +231,15 @@ export function ShotlistStage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {shots.map((s) => (
-                <TableRow key={s.id} className={s.needStill ? "" : "opacity-55"}>
+              {shots.map((s, i) => (
+                <SceneAwareRows
+                  key={s.id}
+                  shot={s}
+                  prevScene={i > 0 ? shots[i - 1].sceneLabel : null}
+                  refining={refining}
+                  onSceneStyle={setSceneStyle}
+                >
+                <TableRow className={s.needStill ? "" : "opacity-55"}>
                   <TableCell>{s.shotNo}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.sceneLabel}</TableCell>
                   <TableCell>
@@ -257,6 +291,7 @@ export function ShotlistStage({
                     </div>
                   </TableCell>
                 </TableRow>
+                </SceneAwareRows>
               ))}
             </TableBody>
           </Table>
@@ -386,6 +421,55 @@ function ShotEditForm({ shot, onSave }: { shot: Shot; onSave: (patch: Partial<Sh
         保存
       </Button>
     </div>
+  );
+}
+
+/** 场分组渲染：场变化处插入场头行（场名 + 该场导演风格选择器，场级粒度） */
+function SceneAwareRows({
+  shot,
+  prevScene,
+  refining,
+  onSceneStyle,
+  children,
+}: {
+  shot: Shot;
+  prevScene: string | null;
+  refining: boolean;
+  onSceneStyle: (scene: string, style: string) => void;
+  children: React.ReactNode;
+}) {
+  const isNewScene = shot.sceneLabel !== prevScene;
+  const sceneStyle = shot.params?.directorStyle ?? "标准";
+  return (
+    <>
+      {isNewScene && shot.sceneLabel && (
+        <TableRow className="bg-secondary/40 hover:bg-secondary/40">
+          <TableCell colSpan={11} className="py-1.5">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-primary">▍{shot.sceneLabel}</span>
+              <span className="text-[10px] text-muted-foreground">本场风格</span>
+              <Select
+                value={sceneStyle}
+                disabled={refining}
+                onValueChange={(v) => v !== sceneStyle && onSceneStyle(shot.sceneLabel, v)}
+              >
+                <SelectTrigger className="h-6 w-40 border-border/60 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DIRECTOR_STYLES.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+      {children}
+    </>
   );
 }
 
