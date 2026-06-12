@@ -6,6 +6,14 @@ import { users, wallets, verificationTokens } from "@/lib/db/schema";
 import { createToken } from "@/lib/tokens";
 import { sendVerificationEmail, emailConfigured } from "@/lib/email";
 import { smsEnabled } from "@/lib/sms";
+import { applyCredits } from "@/lib/billing/charge";
+
+// 新用户注册赠送积分（env 可配，默认 0；内测设 SIGNUP_BONUS_CREDITS=5000）
+async function grantSignupBonus(userId: string) {
+  const bonus = Math.trunc(Number(process.env.SIGNUP_BONUS_CREDITS ?? 0));
+  if (!Number.isFinite(bonus) || bonus <= 0) return;
+  await applyCredits({ userId, delta: bonus, reason: "admin_adjust", ref: { note: "注册赠送" } });
+}
 
 const emailSchema = z.object({
   kind: z.literal("email"),
@@ -52,6 +60,7 @@ export async function POST(req: Request) {
       })
       .returning();
     await db.insert(wallets).values({ userId: user.id }).onConflictDoNothing();
+    await grantSignupBonus(user.id);
 
     if (autoVerify) {
       return Response.json({ ok: true, message: "注册成功，可直接登录" });
@@ -90,6 +99,7 @@ export async function POST(req: Request) {
     })
     .returning();
   await db.insert(wallets).values({ userId: user.id }).onConflictDoNothing();
+  await grantSignupBonus(user.id);
 
   return Response.json({ ok: true, message: "注册成功，请登录" });
 }
