@@ -190,6 +190,7 @@ export async function generateItemPrompt(opts: {
     maxOutputTokens: GENERATE_MAX_OUT,
     providerOptions: { anthropic: { metadata: { userId: opts.userId } } },
   });
+  if (!text.trim()) throw Object.assign(new Error("模型返回空内容，请重试"), { status: 502 });
   const u = toLlmUsage(usage, providerMetadata as Record<string, Record<string, unknown>> | undefined);
   const { credits } = await chargeLlm({
     userId: opts.userId,
@@ -584,7 +585,7 @@ export async function planSegments(opts: {
       const sa = sceneOf(a.shotNos);
       const sb = sceneOf(b.shotNos);
       // 合并时边界重叠镜只算一次
-      const mergedNos = [...new Set([...a.shotNos, ...b.shotNos])];
+      const mergedNos = [...new Set([...a.shotNos, ...b.shotNos])].sort((x, y) => x - y);
       if (sa !== null && sa === sb && sumOf(mergedNos) <= 15) {
         segments.splice(i, 2, {
           segmentNo: 0,
@@ -686,6 +687,7 @@ export async function generateSegmentPrompt(opts: {
     maxOutputTokens: SEGMENT_MAX_OUT,
     providerOptions: { anthropic: { metadata: { userId: opts.userId } } },
   });
+  if (!text.trim()) throw Object.assign(new Error("模型返回空内容，请重试"), { status: 502 });
   const u = toLlmUsage(usage, providerMetadata as Record<string, Record<string, unknown>> | undefined);
   const { credits } = await chargeLlm({
     userId: opts.userId,

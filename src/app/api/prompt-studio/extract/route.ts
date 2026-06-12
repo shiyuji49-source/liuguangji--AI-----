@@ -66,10 +66,10 @@ export async function POST(req: Request) {
     ];
     if (episodeNo) scopeWhere.push(eq(promptItems.episodeNo, episodeNo));
     const existing = await db
-      .select({ id: promptItems.id, name: promptItems.name })
+      .select({ id: promptItems.id, name: promptItems.name, episodes: promptItems.episodes })
       .from(promptItems)
       .where(and(...scopeWhere));
-    const existingByName = new Map(existing.map((e) => [e.name, e.id]));
+    const existingByName = new Map(existing.map((e) => [e.name, e]));
 
     const toInsert = extracted
       .filter((x) => !existingByName.has(x.name))
@@ -87,11 +87,15 @@ export async function POST(req: Request) {
       }));
     if (toInsert.length > 0) await db.insert(promptItems).values(toInsert);
 
-    // 已存在条目：仅更新集数标注（不动提示词）
+    // 已存在条目：把新集数并入旧集数（去重排序），不覆盖——避免单集重提取丢失累积标注
     for (const x of extracted) {
-      const id = existingByName.get(x.name);
-      if (id && x.episodes.length) {
-        await db.update(promptItems).set({ episodes: x.episodes }).where(eq(promptItems.id, id));
+      const row = existingByName.get(x.name);
+      if (row && x.episodes.length) {
+        const old = Array.isArray(row.episodes) ? (row.episodes as number[]) : [];
+        const merged = [...new Set([...old, ...x.episodes])].sort((a, b) => a - b);
+        if (merged.length !== old.length) {
+          await db.update(promptItems).set({ episodes: merged }).where(eq(promptItems.id, row.id));
+        }
       }
     }
 

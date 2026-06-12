@@ -12,7 +12,17 @@ import { applyCredits } from "@/lib/billing/charge";
 async function grantSignupBonus(userId: string) {
   const bonus = Math.trunc(Number(process.env.SIGNUP_BONUS_CREDITS ?? 0));
   if (!Number.isFinite(bonus) || bonus <= 0) return;
-  await applyCredits({ userId, delta: bonus, reason: "admin_adjust", ref: { note: "注册赠送" } });
+  // 送积分失败绝不能让注册整体失败（否则用户已建但收到错误，再注册又"邮箱已注册"）
+  try {
+    await applyCredits({ userId, delta: bonus, reason: "admin_adjust", ref: { note: "注册赠送" } });
+  } catch (e) {
+    console.error("[grantSignupBonus] 送积分失败（不影响注册）", e);
+  }
+}
+
+// Postgres 唯一约束冲突
+function isUniqueViolation(e: unknown): boolean {
+  return Boolean(e && typeof e === "object" && (e as { code?: string }).code === "23505");
 }
 
 const emailSchema = z.object({
@@ -50,15 +60,22 @@ export async function POST(req: Request) {
 
     // 未配置 SMTP（内测/无邮件基建）时自动免验证——否则收不到验证邮件就永远登不进
     const autoVerify = !emailConfigured();
-    const [user] = await db
-      .insert(users)
-      .values({
-        name: input.name,
-        email: input.email,
-        passwordHash: await bcrypt.hash(input.password, 10),
-        emailVerifiedAt: autoVerify ? new Date() : null,
-      })
-      .returning();
+    let user;
+    try {
+      [user] = await db
+        .insert(users)
+        .values({
+          name: input.name,
+          email: input.email,
+          passwordHash: await bcrypt.hash(input.password, 10),
+          emailVerifiedAt: autoVerify ? new Date() : null,
+        })
+        .returning();
+    } catch (e) {
+      // 并发同邮箱注册的竞态：唯一约束兜底，返回 409 而非 500
+      if (isUniqueViolation(e)) return Response.json({ error: "该邮箱已注册" }, { status: 409 });
+      throw e;
+    }
     await db.insert(wallets).values({ userId: user.id }).onConflictDoNothing();
     await grantSignupBonus(user.id);
 
@@ -90,14 +107,20 @@ export async function POST(req: Request) {
     .update(verificationTokens)
     .set({ usedAt: new Date() })
     .where(eq(verificationTokens.id, codeRow.id));
-  const [user] = await db
-    .insert(users)
-    .values({
-      name: input.name,
-      phone: input.phone,
-      passwordHash: await bcrypt.hash(input.password, 10),
-    })
-    .returning();
+  let user;
+  try {
+    [user] = await db
+      .insert(users)
+      .values({
+        name: input.name,
+        phone: input.phone,
+        passwordHash: await bcrypt.hash(input.password, 10),
+      })
+      .returning();
+  } catch (e) {
+    if (isUniqueViolation(e)) return Response.json({ error: "该手机号已注册" }, { status: 409 });
+    throw e;
+  }
   await db.insert(wallets).values({ userId: user.id }).onConflictDoNothing();
   await grantSignupBonus(user.id);
 

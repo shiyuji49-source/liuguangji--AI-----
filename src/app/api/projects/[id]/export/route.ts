@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { promptItems, shots, videoSegments, projects } from "@/lib/db/schema";
 import { requireProjectMember, toErrorResponse } from "@/lib/auth-helpers";
+import { assertWorkspaceAccess } from "@/lib/prompt-studio/access";
 
 export const maxDuration = 120;
 
@@ -57,9 +58,11 @@ function epLabel(episodes: unknown): string {
 export async function GET(req: Request, { params }: Params) {
   try {
     const { id: projectId } = await params;
-    await requireProjectMember(projectId);
+    const { projectRole } = await requireProjectMember(projectId);
     const url = new URL(req.url);
     const type = url.searchParams.get("type") ?? "assets";
+    // 导出权限按工作区对应角色（与各生成阶段同一口径）：资产→资产工作区，分镜/静帧→分镜，片段→视频
+    assertWorkspaceAccess(projectRole, type === "assets" ? "资产" : type === "segments" ? "视频" : "静帧");
     const scriptId = url.searchParams.get("scriptId");
     const episodeNo = url.searchParams.get("episodeNo");
     const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });

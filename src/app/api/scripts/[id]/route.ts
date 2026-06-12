@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { scripts, scriptEpisodes, shots, promptItems } from "@/lib/db/schema";
+import { scripts, scriptEpisodes, shots, promptItems, videoSegments } from "@/lib/db/schema";
 import { toErrorResponse } from "@/lib/auth-helpers";
 import { loadScript } from "@/lib/scripts/access";
 
@@ -30,8 +30,9 @@ export async function DELETE(_req: Request, { params }: Params) {
   try {
     const { id } = await params;
     await loadScript(id, { requireDirector: true });
-    // 级联清理引用本剧本的派生数据（shots/promptItems 外键为 no action，不清会 500）
+    // 级联清理引用本剧本的派生数据（外键为 no action，不清会 500）
     await db.transaction(async (tx) => {
+      await tx.delete(videoSegments).where(eq(videoSegments.scriptId, id));
       await tx.delete(shots).where(eq(shots.scriptId, id));
       await tx.delete(promptItems).where(eq(promptItems.scriptId, id));
       await tx.delete(scriptEpisodes).where(eq(scriptEpisodes.scriptId, id));
