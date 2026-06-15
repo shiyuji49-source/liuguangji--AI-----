@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ImageIcon, Loader2, Trash2, Sparkles } from "lucide-react";
+import { ImageIcon, Loader2, Trash2, Sparkles, ImagePlus, FileDown, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,17 +60,37 @@ export function ImageStudioApp({
   const [busy, setBusy] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [filter, setFilter] = useState("全部");
+  const [refIds, setRefIds] = useState<string[]>([]); // 参考图（从资产墙选，锁一致性）
+  const [refPickerOpen, setRefPickerOpen] = useState(false);
+  const [assetPrompts, setAssetPrompts] = useState<{ name: string; promptText: string }[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/image-studio/assets?projectId=${projectId}`);
     if (res.ok) setAssets((await res.json()).assets);
   }, [projectId]);
 
+  // 提示词生成器已生成的资产提示词（可一键带入）
+  const loadAssetPrompts = useCallback(async () => {
+    const res = await fetch(`/api/prompt-studio/items?projectId=${projectId}&workspace=资产`);
+    if (!res.ok) return;
+    const items: { name: string; promptText: string | null; state: string }[] = (await res.json()).items;
+    setAssetPrompts(
+      items.filter((i) => i.state === "done" && i.promptText).map((i) => ({ name: i.name, promptText: i.promptText! }))
+    );
+  }, [projectId]);
+
   useEffect(() => {
     (async () => {
       await load();
+      await loadAssetPrompts();
     })();
-  }, [load]);
+  }, [load, loadAssetPrompts]);
+
+  const refAssets = assets.filter((a) => refIds.includes(a.id));
+  function toggleRef(id: string) {
+    setRefIds((r) => (r.includes(id) ? r.filter((x) => x !== id) : r.length >= 8 ? r : [...r, id]));
+  }
 
   async function generate() {
     if (!prompt.trim()) {
@@ -82,7 +102,15 @@ export function ImageStudioApp({
       const res = await fetch("/api/image-studio/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, engine, prompt: prompt.trim(), tier, kind, atName: atName.trim() || undefined }),
+        body: JSON.stringify({
+          projectId,
+          engine,
+          prompt: prompt.trim(),
+          tier,
+          kind,
+          atName: atName.trim() || undefined,
+          refAssetIds: refIds.length ? refIds : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -135,9 +163,81 @@ export function ImageStudioApp({
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="图片提示词（可从提示词生成器复制资产提示词粘进来）"
+            placeholder="图片提示词"
             className="max-h-60 min-h-32 resize-y text-sm leading-6"
           />
+
+          {/* 从提示词生成器带入资产提示词 */}
+          {assetPrompts.length > 0 && (
+            <div className="space-y-1.5">
+              <button
+                onClick={() => setImportOpen((v) => !v)}
+                className="flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <FileDown className="size-3.5" /> 从提示词生成器带入（{assetPrompts.length}）
+              </button>
+              {importOpen && (
+                <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
+                  {assetPrompts.map((a) => (
+                    <button
+                      key={a.name}
+                      onClick={() => {
+                        setPrompt(a.promptText);
+                        if (!atName) setAtName(a.name);
+                        setImportOpen(false);
+                      }}
+                      className="block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-secondary"
+                      title={a.promptText}
+                    >
+                      {a.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 参考图（从资产墙选，锁角色/构图一致性；nano 最多 6 主体+5 角色） */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setRefPickerOpen((v) => !v)}
+                className="flex items-center gap-1 text-xs text-primary hover:underline"
+                disabled={assets.length === 0}
+              >
+                <ImagePlus className="size-3.5" /> 参考图（{refIds.length}）
+              </button>
+              <span className="text-[10px] text-muted-foreground">从资产墙选图锁一致性</span>
+            </div>
+            {refAssets.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {refAssets.map((a) => (
+                  <div key={a.id} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="size-12 rounded border border-primary/50 object-cover" />
+                    <button onClick={() => toggleRef(a.id)} className="absolute -right-1 -top-1 rounded-full bg-background text-muted-foreground hover:text-destructive">
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {refPickerOpen && assets.length > 0 && (
+              <div className="grid max-h-48 grid-cols-4 gap-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
+                {assets.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => toggleRef(a.id)}
+                    className={`overflow-hidden rounded border-2 ${refIds.includes(a.id) ? "border-primary" : "border-transparent"}`}
+                    title={a.atName}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
