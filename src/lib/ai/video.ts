@@ -5,10 +5,12 @@
  */
 const BASE = (process.env.ARK_BASE_URL ?? "https://ark.cn-beijing.volces.com").replace(/\/+$/, "");
 const KEY = () => process.env.ARK_API_KEY ?? "";
-// 默认 1.0-pro（账号已开通）；开通 Seedance 2.0 后设 ARK_SEEDANCE_MODEL=<2.0 的 model id>
-const MODEL = () => process.env.ARK_SEEDANCE_MODEL ?? "doubao-seedance-1-0-pro-250528";
+// Seedance 2.0（已开通，实测可用）；2.0 fast 设 doubao-seedance-2-0-fast-* ；1.0 pro 设其 id
+const MODEL = () => process.env.ARK_SEEDANCE_MODEL ?? "doubao-seedance-2-0-260128";
 
 export type VideoResolution = "480p" | "720p" | "1080p";
+// 参考图角色：首帧/尾帧（图生视频）/参考图（2.0 多模态，1-9 张）。三场景互斥不可混用。
+// ⚠️Seedance 2.0 不支持直接传含真人人脸的参考图（需用预置虚拟人像/已授权素材，见 docs）。
 export type FrameRole = "first_frame" | "last_frame" | "reference_image";
 export type VideoRef = { base64: string; mime: string; role: FrameRole };
 
@@ -16,7 +18,8 @@ export type CreateVideoInput = {
   prompt: string;
   resolution: VideoResolution;
   durationSec: number; // 4-15
-  ratio?: string; // 16:9 / 9:16 / 1:1
+  ratio?: string; // 16:9 / 9:16 / 1:1 / adaptive ...
+  generateAudio?: boolean; // 2.0 支持有声（含对话/音效/BGM），默认 true
   refImages?: VideoRef[];
 };
 
@@ -27,13 +30,11 @@ function vErr(msg: string, status = 502) {
   return Object.assign(new Error(msg), { status });
 }
 
-/** 创建视频任务 → 返回 providerTaskId（cgt-xxx）。失败抛错。 */
+/** 创建视频任务 → 返回 providerTaskId（cgt-xxx）。失败抛错。参数走新方式(body 直传，强校验)。 */
 export async function createVideoTask(input: CreateVideoInput): Promise<string> {
   if (!KEY()) throw vErr("未配置 ARK_API_KEY", 500);
-  const dur = Math.min(15, Math.max(4, Math.round(input.durationSec)));
-  const ratio = input.ratio ?? "16:9";
-  const text = `${input.prompt} --resolution ${input.resolution} --duration ${dur} --ratio ${ratio}`;
-  const content: Array<Record<string, unknown>> = [{ type: "text", text }];
+  const duration = Math.min(15, Math.max(4, Math.round(input.durationSec)));
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: input.prompt }];
   for (const r of input.refImages ?? []) {
     content.push({
       type: "image_url",
@@ -44,7 +45,15 @@ export async function createVideoTask(input: CreateVideoInput): Promise<string> 
   const res = await fetch(`${BASE}/api/v3/contents/generations/tasks`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ model: MODEL(), content }),
+    body: JSON.stringify({
+      model: MODEL(),
+      content,
+      resolution: input.resolution,
+      ratio: input.ratio ?? "adaptive",
+      duration,
+      generate_audio: input.generateAudio ?? true,
+      watermark: false,
+    }),
   });
   const j = await res.json().catch(() => null);
   if (!res.ok || !j?.id) throw vErr(`创建视频任务失败：${j?.error?.message ?? res.status}`);
