@@ -155,3 +155,47 @@ export async function estimateImageMaxCredits(model: string, tier: ImageTier, n 
   const { credits } = await calcImageCostCredits({ model, tier, n });
   return credits;
 }
+
+// ===== 视频计费（按方舟实际 usage token；预检按时长×分辨率估上限）=====
+
+export type VideoResolution = "480p" | "720p" | "1080p";
+// 预检用：每秒约耗 token（实测 480p 5s≈49005→~9800/s；720p/1080p 估更高，宽放）
+const VIDEO_TOKENS_PER_SEC: Record<VideoResolution, number> = { "480p": 11000, "720p": 22000, "1080p": 47000 };
+
+/** 结算：按方舟返回的实际 usageTokens × 该分辨率单价 */
+export async function calcVideoCostCredits(opts: { resolution: VideoResolution; usageTokens: number }) {
+  const p = await getPricing();
+  const rate = p[`video.${opts.resolution}.per_1k_tokens`] ?? p["video.720p.per_1k_tokens"];
+  const raw = (opts.usageTokens / 1000) * rate;
+  const credits = Math.max(Math.ceil(raw), Math.ceil(p["video.min_per_call"] ?? 1));
+  return { credits, rate };
+}
+
+export async function chargeVideo(opts: {
+  userId: string;
+  resolution: VideoResolution;
+  usageTokens: number;
+  ref?: LedgerRef;
+}) {
+  const { credits } = await calcVideoCostCredits(opts);
+  const { balanceAfter } = await applyCredits({
+    userId: opts.userId,
+    delta: -credits,
+    reason: "video",
+    ref: { resolution: opts.resolution, usageTokens: opts.usageTokens, ...opts.ref },
+  });
+  return { credits, balanceAfter };
+}
+
+/** 视频预检上限：时长 × 分辨率每秒 token × 单价（宽放，提交前扣检，防轮询完才发现余额不足） */
+export async function estimateVideoMaxCredits(resolution: VideoResolution, durationSec: number) {
+  const tokens = VIDEO_TOKENS_PER_SEC[resolution] * Math.min(15, Math.max(4, durationSec));
+  const { credits } = await calcVideoCostCredits({ resolution, usageTokens: tokens });
+  return credits;
+}
+
+/** 退款（视频任务失败/取消时，把已扣的预留退回） */
+export async function refundCredits(userId: string, credits: number, ref?: LedgerRef) {
+  if (credits <= 0) return;
+  await applyCredits({ userId, delta: credits, reason: "refund", ref });
+}

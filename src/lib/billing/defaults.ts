@@ -25,10 +25,12 @@ export const DEFAULT_PRICING: Record<string, number> = {
   "image.nano.2k": 150,
   "image.nano.4k": 260,
   "image.min_per_call": 5,
-  // —— 视频（积分/千 token；结算用方舟实际 usage；Seedance 480p/720p/1080p 三档）
-  "video.480p.per_1k_tokens": 5.0,
+  // —— 视频（积分/千 token；结算用方舟实际 usage；成本≈¥46/M=4.6积分/1k，×1.5 加价≈6.9）
+  // 分辨率不改单价（只改 token 数量）；admin 可改
+  "video.480p.per_1k_tokens": 6.9,
   "video.720p.per_1k_tokens": 6.9,
   "video.1080p.per_1k_tokens": 7.65,
+  "video.min_per_call": 20,
 };
 
 // 模型名 → 定价档位映射（裸名，§2）
