@@ -63,6 +63,10 @@ export function parseJsonArrayLoose(text: string): unknown[] | null {
 
 function extractInstruction(workspace: Workspace, episodeLabel?: string): string {
   if (workspace === "资产") {
+    // 逐集提取（episodeLabel 存在）：穷尽列举本集，跨集去重在落库层做——比全剧一次性提取可靠得多
+    if (episodeLabel) {
+      return `通读下面这一集（${episodeLabel}），**穷尽列举本集出现的所有需要做视觉资产的条目，宁多勿漏**，按类型分类：人物、服装、道具、场景、群演。规则：① 人物=所有有名有姓或有台词/有戏份的角色（无名龙套并入群演）；② 服装=有辨识度的造型/戏服；③ 道具=画面有戏的器物；④ 场景=出现的地点；⑤ 群演=成群的背景人物类型。每条给 kind（五选一）、name（@名，如 @木兰）、brief（一句话外观/身份描述）。只输出 JSON 数组，形如 [{"kind":"人物","name":"@木兰","brief":"30岁女将军，英气逼人"}]，不要任何额外文字、解释或代码块标注。`;
+    }
     return '通读下面的剧本，提取需要做视觉资产的条目，按类型分类：人物、服装、道具、场景、群演。每条给 kind（五选一）、name（@名，如 @木兰）、brief（一句话外观/身份描述）、episodes（该资产出现的集数数组，按剧本中"第X集"标记判断，如 [1,3,5]；通篇出现可写全部集号）。只输出 JSON 数组，形如 [{"kind":"人物","name":"@木兰","brief":"30岁女将军，英气逼人","episodes":[1,2,3]}]，不要输出任何额外文字、解释或代码块标注。';
   }
   if (workspace === "静帧") {

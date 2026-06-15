@@ -24,7 +24,7 @@ export function AssetsStage({
 }) {
   const router = useRouter();
   const [items, setItems] = useState<PromptItem[]>([]);
-  const [extracting, setExtracting] = useState(false);
+  const [extractProg, setExtractProg] = useState<{ done: number; total: number } | null>(null);
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
   const [kindFilter, setKindFilter] = useState<string>("全部");
 
@@ -42,28 +42,55 @@ export function AssetsStage({
     })();
   }, [loadItems]);
 
+  // 逐集提取全剧资产：每集单独喂模型（穷尽列举），跨集按名字去重累积。
+  // 顺序执行——避免两集并发把同名新资产各插一份（去重在落库层按 name）。
   async function extract() {
     if (!scriptId) {
       toast.error("先选剧本");
       return;
     }
-    setExtracting(true);
+    // 取集列表（含前置资料 0：人物表常列全角色）
+    const epRes = await fetch(`/api/scripts/${scriptId}`);
+    if (!epRes.ok) {
+      toast.error("读取剧本分集失败");
+      return;
+    }
+    const episodes: { episodeNo: number }[] = (await epRes.json()).episodes ?? [];
+    if (episodes.length === 0) {
+      toast.error("剧本还没有分集");
+      return;
+    }
+    setExtractProg({ done: 0, total: episodes.length });
+    let totalAdded = 0;
+    let failed = 0;
     try {
-      const res = await fetch("/api/prompt-studio/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, workspace: "资产", scriptId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? "提取失败");
-        return;
+      for (let i = 0; i < episodes.length; i++) {
+        const res = await fetch("/api/prompt-studio/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            workspace: "资产",
+            scriptId,
+            episodeNo: episodes[i].episodeNo,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          totalAdded += data.added ?? 0;
+          setItems(data.items); // 实时显示累积增长
+        } else {
+          failed++;
+        }
+        setExtractProg({ done: i + 1, total: episodes.length });
       }
-      setItems(data.items);
-      toast.success(data.added > 0 ? `新增 ${data.added} 个资产` : "没有新增资产（已是最新）");
+      await loadItems();
+      toast.success(
+        `逐集提取完成：累计 ${totalAdded} 个资产${failed ? `（${failed} 集失败，可重跑补齐）` : ""}`
+      );
       router.refresh();
     } finally {
-      setExtracting(false);
+      setExtractProg(null);
     }
   }
 
@@ -162,12 +189,19 @@ export function AssetsStage({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
-        <Button size="sm" className="h-8" onClick={extract} disabled={extracting || !scriptId}>
-          {extracting ? <Loader2 className="size-3.5 animate-spin" /> : <ListPlus className="size-3.5" />}
-          提取资产（全剧）
+        <Button size="sm" className="h-8" onClick={extract} disabled={!!extractProg || !scriptId}>
+          {extractProg ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" /> 提取中 {extractProg.done}/{extractProg.total} 集
+            </>
+          ) : (
+            <>
+              <ListPlus className="size-3.5" /> 提取资产（逐集全剧）
+            </>
+          )}
         </Button>
         {items.length > 0 && (
-          <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch}>
+          <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch || !!extractProg}>
             {batch ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}

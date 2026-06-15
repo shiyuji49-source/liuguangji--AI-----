@@ -16,7 +16,8 @@ export async function POST(req: Request) {
         projectId: z.string().uuid(),
         workspace: z.enum(["资产", "静帧", "视频"]),
         scriptId: z.string().uuid(),
-        episodeNo: z.number().int().positive().optional(),
+        episodeNo: z.number().int().min(0).optional(), // 资产可逐集提取（含 0=前置资料）
+
       })
       .safeParse(body);
     if (!parsed.success) return Response.json({ error: "参数不正确" }, { status: 400 });
@@ -28,10 +29,12 @@ export async function POST(req: Request) {
     const script = await db.query.scripts.findFirst({ where: eq(scripts.id, scriptId) });
     if (!script || script.projectId !== projectId) throw new AuthError("剧本不存在", 404);
 
-    // 取剧本文本：资产=全剧；静帧/视频=单集
+    // 取剧本文本：资产逐集提取（episodeNo 必给，全剧靠前端循环 + 落库去重累积，避免一次性提取漏早集/不稳定）；
+    // 资产不带 episodeNo 时回退全剧一次性提取（小剧本/兼容旧调用）。静帧/视频=单集。
     let scriptText: string;
     let episodeLabel: string | undefined;
-    if (workspace === "资产") {
+    const perEpisodeAsset = workspace === "资产" && episodeNo !== undefined;
+    if (workspace === "资产" && episodeNo === undefined) {
       const eps = await db
         .select()
         .from(scriptEpisodes)
@@ -39,13 +42,13 @@ export async function POST(req: Request) {
         .orderBy(asc(scriptEpisodes.episodeNo));
       scriptText = eps.map((e) => `=== 第 ${e.episodeNo} 集 ===\n${e.content}`).join("\n\n");
     } else {
-      if (!episodeNo) return Response.json({ error: "请选择集" }, { status: 400 });
+      if (episodeNo === undefined) return Response.json({ error: "请选择集" }, { status: 400 });
       const ep = await db.query.scriptEpisodes.findFirst({
         where: and(eq(scriptEpisodes.scriptId, scriptId), eq(scriptEpisodes.episodeNo, episodeNo)),
       });
       if (!ep) throw new AuthError("该集不存在", 404);
       scriptText = ep.content;
-      episodeLabel = `第 ${episodeNo} 集`;
+      episodeLabel = episodeNo === 0 ? "前置资料（人物表/梗概）" : `第 ${episodeNo} 集`;
     }
     if (!scriptText.trim()) return Response.json({ error: "剧本内容为空" }, { status: 400 });
 
@@ -55,6 +58,10 @@ export async function POST(req: Request) {
       scriptText,
       episodeLabel,
     });
+    // 逐集资产：本集就是出处，强制 episodes=[本集]（前置资料 0 不计入集数标注）
+    if (perEpisodeAsset) {
+      for (const x of extracted) x.episodes = episodeNo && episodeNo > 0 ? [episodeNo] : [];
+    }
     if (extracted.length === 0) {
       return Response.json({ error: "未能从剧本提取到条目，请检查剧本内容" }, { status: 422 });
     }
@@ -64,7 +71,9 @@ export async function POST(req: Request) {
       eq(promptItems.projectId, projectId),
       eq(promptItems.workspace, workspace as Workspace),
     ];
-    if (episodeNo) scopeWhere.push(eq(promptItems.episodeNo, episodeNo));
+    // 资产=项目全局去重（不按集隔离，逐集提取才能跨集复用同名资产）；静帧/视频=按集
+    if (episodeNo !== undefined && workspace !== "资产")
+      scopeWhere.push(eq(promptItems.episodeNo, episodeNo));
     const existing = await db
       .select({ id: promptItems.id, name: promptItems.name, episodes: promptItems.episodes })
       .from(promptItems)
@@ -80,7 +89,7 @@ export async function POST(req: Request) {
         name: x.name,
         brief: x.brief,
         episodes: x.episodes.length ? x.episodes : null,
-        episodeNo: episodeNo ?? null,
+        episodeNo: workspace === "资产" ? null : (episodeNo ?? null), // 资产全局，不绑单集
         scriptId,
         sortIndex: existing.length + i,
         createdBy: user.id,
@@ -99,7 +108,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const rows = await listScopeItems(projectId, workspace as Workspace, episodeNo);
+    const rows = await listScopeItems(
+      projectId,
+      workspace as Workspace,
+      workspace === "资产" ? undefined : episodeNo
+    );
     return Response.json({ items: rows, added: toInsert.length });
   } catch (e) {
     return toErrorResponse(e);
