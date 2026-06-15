@@ -7,7 +7,8 @@
 
 const BASE = (process.env.DMXAPI_BASE_URL ?? "https://www.dmxapi.cn").replace(/\/+$/, "");
 const KEY = () => process.env.DMXAPI_API_KEY ?? "";
-const GPT_MODEL = process.env.DMXAPI_GPT_IMAGE_MODEL ?? "gpt-image-2-ssvip";
+// 压测结论：普通版又便宜又稳，ssvip 贵 1.5-2.5× 不划算、03 固定价不稳(429)。默认用普通版。
+const GPT_MODEL = process.env.DMXAPI_GPT_IMAGE_MODEL ?? "gpt-image-2";
 const NANO_MODEL = process.env.DMXAPI_NANO_IMAGE_MODEL ?? "gemini-3-pro-image";
 
 export type ImageEngine = "gpt" | "nano";
