@@ -3,6 +3,7 @@ import { requireProjectMember, AuthError } from "@/lib/auth-helpers";
 import { getApp, isAppLive, appsVisibleFor } from "@/apps/registry";
 import { PromptStudioApp } from "@/apps/prompt-studio";
 import { ScriptDoctorApp } from "@/apps/script-doctor";
+import { ImageStudioApp } from "@/apps/image-studio";
 
 export default async function AppHostPage({
   params,
@@ -44,6 +45,8 @@ export default async function AppHostPage({
       return <ScriptDoctorApp {...common} />;
     case "prompt-studio":
       return <PromptStudioApp {...common} />;
+    case "image-studio":
+      return <ImageStudioApp {...common} />;
     default:
       notFound();
   }
