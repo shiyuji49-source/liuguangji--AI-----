@@ -31,6 +31,33 @@ const TIERS = [
   { key: "4k", label: "超清 4K" },
 ] as const;
 
+// 画幅可选项（按引擎）：
+// - nano(gemini)：比例自由，直接传 imageConfig.aspectRatio。
+// - gpt-image-2：走 OpenAI size，实际比例随清晰度变（1K横=3:2、2K/4K横=16:9），
+//   所以只暴露「朝向」三选项，后端按 档位×朝向 落到合法 size。
+const ASPECTS_NANO = ["21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"];
+const ASPECTS_GPT = ["16:9", "1:1", "9:16"]; // 值只表朝向：横 / 方 / 竖
+function aspectsFor(engine: "gpt" | "nano") {
+  return engine === "nano" ? ASPECTS_NANO : ASPECTS_GPT;
+}
+function aspectOrient(aspect: string): -1 | 0 | 1 {
+  const [a, b] = aspect.split(":").map(Number);
+  if (!a || !b || a === b) return 0;
+  return a > b ? 1 : -1; // 1 横 / -1 竖 / 0 方
+}
+const ORIENT_WORD = { "1": "横", "-1": "竖", "0": "方" } as const;
+/** 把任意比例吸附到该引擎支持的合法值（按横/竖/方就近）。 */
+function snapAspect(aspect: string, engine: "gpt" | "nano"): string {
+  const opts = aspectsFor(engine);
+  if (opts.includes(aspect)) return aspect;
+  const o = aspectOrient(aspect);
+  return o > 0 ? "16:9" : o < 0 ? "9:16" : "1:1";
+}
+function aspectLabel(aspect: string, engine: "gpt" | "nano"): string {
+  const word = ORIENT_WORD[String(aspectOrient(aspect)) as "1" | "-1" | "0"];
+  return engine === "gpt" ? word : `${aspect} ${word}`; // gpt 只显朝向，nano 显比例
+}
+
 /**
  * 应用 · 图像生成器（P1）：左栏出图（image2/nano banana pro，经 DMXAPI），
  * 出图即落项目资产墙（右栏网格）。每张可被视频生成器 @ 调用。
@@ -53,6 +80,7 @@ export function ImageStudioApp({
   userId: string;
 }) {
   const [engine, setEngine] = useState<"gpt" | "nano">("gpt");
+  const [aspect, setAspect] = useState(() => snapAspect(projectAspect || "9:16", "gpt"));
   const [prompt, setPrompt] = useState("");
   const [kind, setKind] = useState<string>("人物");
   const [tier, setTier] = useState<"1k" | "2k" | "4k">("2k");
@@ -108,6 +136,7 @@ export function ImageStudioApp({
           prompt: prompt.trim(),
           tier,
           kind,
+          aspectRatio: aspect,
           atName: atName.trim() || undefined,
           refAssetIds: refIds.length ? refIds : undefined,
         }),
@@ -150,7 +179,14 @@ export function ImageStudioApp({
       <div className="flex flex-col gap-4 lg:flex-row">
         {/* 左：出图台 */}
         <div className="w-full shrink-0 space-y-3 lg:w-80">
-          <Tabs value={engine} onValueChange={(v) => setEngine(v as "gpt" | "nano")}>
+          <Tabs
+            value={engine}
+            onValueChange={(v) => {
+              const e = v as "gpt" | "nano";
+              setEngine(e);
+              setAspect((cur) => snapAspect(cur, e));
+            }}
+          >
             <TabsList className="w-full">
               {ENGINES.map((e) => (
                 <TabsTrigger key={e.key} value={e.key} className="flex-1 text-xs">
@@ -239,7 +275,18 @@ export function ImageStudioApp({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">画幅</span>
+              <Select value={aspect} onValueChange={setAspect}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {aspectsFor(engine).map((r) => (
+                    <SelectItem key={r} value={r}>{aspectLabel(r, engine)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground">资产类型</span>
               <Select value={kind} onValueChange={setKind}>
@@ -259,6 +306,11 @@ export function ImageStudioApp({
               </Select>
             </div>
           </div>
+          {engine === "gpt" && (
+            <p className="-mt-1 text-[10px] text-muted-foreground">
+              image2 仅支持 方/横/竖 三种画幅；要任意比例（如 16:9、4:5）请切 nano banana pro。
+            </p>
+          )}
 
           <Input
             value={atName}
@@ -268,7 +320,7 @@ export function ImageStudioApp({
           />
 
           <Button className="w-full" onClick={generate} disabled={busy}>
-            {busy ? <><Loader2 className="size-4 animate-spin" /> 出图中（约 20-40 秒）…</> : <><Sparkles className="size-4" /> 生成（{projectAspect}）</>}
+            {busy ? <><Loader2 className="size-4 animate-spin" /> 出图中（约 30-90 秒）…</> : <><Sparkles className="size-4" /> 生成（{aspectLabel(aspect, engine)} · {tier.toUpperCase()}）</>}
           </Button>
           <p className="text-[11px] text-muted-foreground">出图即入资产墙，可被视频生成器 @ 调用。</p>
         </div>

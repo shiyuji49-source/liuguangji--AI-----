@@ -36,18 +36,31 @@ function genError(msg: string, status = 502) {
   return Object.assign(new Error(msg), { status });
 }
 
-// gpt-image-2：tier → quality（低/中/高）；size 取 OpenAI 接受值（按画幅）
-const GPT_QUALITY: Record<ImageTier, string> = { "1k": "low", "2k": "medium", "4k": "high" };
-function gptSize(aspect?: string): string {
-  if (aspect === "16:9") return "1536x1024";
-  if (aspect === "9:16") return "1024x1536";
-  return "1024x1024";
+// gpt-image-2（DMXAPI / OpenAI Images）：**清晰度 = 真实分辨率 size**（不是 quality！）。
+// 档位 × 朝向 → size。文档枚举的合法值 + 约束（边长≤3840、宽高均 16 倍数、比例≤3:1、
+// 总像素 65.5万~829万）；2K竖/4K方文档未枚举但满足全部约束。
+const GPT_SIZE: Record<ImageTier, { land: string; port: string; square: string }> = {
+  "1k": { land: "1536x1024", port: "1024x1536", square: "1024x1024" },
+  "2k": { land: "2048x1152", port: "1152x2048", square: "2048x2048" },
+  "4k": { land: "3840x2160", port: "2160x3840", square: "2880x2880" },
+};
+function aspectOrient(aspect?: string): -1 | 0 | 1 {
+  const [a, b] = (aspect ?? "").split(":").map(Number);
+  if (!a || !b || a === b) return 0;
+  return a > b ? 1 : -1; // 1 横 / -1 竖 / 0 方
 }
+function gptSize(tier: ImageTier, aspect?: string): string {
+  const s = GPT_SIZE[tier];
+  const o = aspectOrient(aspect);
+  return o > 0 ? s.land : o < 0 ? s.port : s.square;
+}
+// 质量固定中档：兼顾画质/速度/成本，避开 high 的超长耗时（实测 1024/high≈210s 易触发网关超时）。
+const GPT_QUALITY = "medium";
 
 async function generateGpt(input: GenImageInput): Promise<GenImageResult> {
   const n = Math.max(1, Math.trunc(input.n ?? 1));
-  const quality = GPT_QUALITY[input.tier];
-  const size = gptSize(input.aspectRatio);
+  const quality = GPT_QUALITY;
+  const size = gptSize(input.tier, input.aspectRatio);
   let res: Response;
 
   if (input.refImages?.length) {
