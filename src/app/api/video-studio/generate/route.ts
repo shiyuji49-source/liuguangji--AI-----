@@ -13,6 +13,10 @@ export const maxDuration = 60; // 仅创建任务（异步），不等出片
 // 提交视频生成任务（异步）：建 Seedance 任务 + gen_task，立即返回 taskId，由轮询端点推进。
 export async function POST(req: Request) {
   try {
+    // 总开关（前期关闭防误点烧钱）：设 VIDEO_GEN_ENABLED=true 开启
+    if (process.env.VIDEO_GEN_ENABLED !== "true") {
+      return Response.json({ error: "视频生成暂未开放" }, { status: 403 });
+    }
     const parsed = z
       .object({
         projectId: z.string().uuid(),

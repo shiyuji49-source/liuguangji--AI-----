@@ -28,6 +28,9 @@ const RES = [
   { key: "1080p", label: "超清 1080p" },
 ] as const;
 
+// 视频生成总开关（前期关闭，防误点烧钱）。设 NEXT_PUBLIC_VIDEO_GEN_ENABLED=true 开启
+const VIDEO_GEN_ENABLED = process.env.NEXT_PUBLIC_VIDEO_GEN_ENABLED === "true";
+
 /**
  * 应用 · 视频生成器（P2）：读分镜片段（提示词生成器产出的多镜合并 Seedance 提示词），
  * 逐片段送 Seedance 2.0 异步出片（提交→轮询→入资产墙→时间线预览）。
@@ -274,10 +277,11 @@ export function VideoStudioApp({
                   )}
 
                   <div className="flex items-center gap-2">
-                    <Button size="sm" className="h-8" disabled={isBusy || !seg.prompt} onClick={() => generate(seg)}>
+                    <Button size="sm" className="h-8" disabled={!VIDEO_GEN_ENABLED || isBusy || !seg.prompt} onClick={() => generate(seg)}>
                       {isBusy ? <><Loader2 className="size-3.5 animate-spin" /> 出片中…</> : vKey ? <><Play className="size-3.5" /> 重新生成</> : <><Play className="size-3.5" /> 生成视频</>}
                     </Button>
-                    {vState === "failed" && <span className="text-xs text-destructive">上次失败，可重试</span>}
+                    {!VIDEO_GEN_ENABLED && <span className="text-xs text-muted-foreground">视频生成暂未开放</span>}
+                    {VIDEO_GEN_ENABLED && vState === "failed" && <span className="text-xs text-destructive">上次失败，可重试</span>}
                   </div>
                 </CardContent>
               </Card>
