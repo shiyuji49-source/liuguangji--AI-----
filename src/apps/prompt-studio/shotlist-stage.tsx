@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Elapsed } from "./stopwatch";
 import {
   Table,
   TableBody,
@@ -191,6 +192,7 @@ export function ShotlistStage({
         <Button size="sm" className="h-8" onClick={() => build(false)} disabled={building}>
           {building ? <Loader2 className="size-3.5 animate-spin" /> : <Clapperboard className="size-3.5" />}
           {shots.length > 0 ? "重新构建分镜表" : "构建分镜表"}
+          {building && <Elapsed running className="ml-1 text-xs" />}
         </Button>
         {shots.length > 0 && (
           <>
@@ -322,6 +324,7 @@ export function ShotlistStage({
           <Button size="sm" className="h-9 shrink-0" onClick={refine} disabled={!suggestion.trim() || refining}>
             {refining ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             按建议修订
+            {refining && <Elapsed running className="ml-1 text-xs" />}
           </Button>
         </div>
       )}

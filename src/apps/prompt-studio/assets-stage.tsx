@@ -2,31 +2,38 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wand2, ListPlus, Loader2, Download } from "lucide-react";
+import { Wand2, ListPlus, Loader2, Download, BookOpen, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ASSET_MODES } from "@/apps/registry";
 import { PromptItemCard, type PromptItem } from "./item-card";
+import { Elapsed } from "./stopwatch";
+
+type EpisodeLite = { episodeNo: number; title?: string };
 
 /**
- * 阶段①资产：先「提取资产」把全剧的人物/服装/道具/场景/群演抓全，
- * 再逐卡/批量用对应资产 skill 生成提示词。
+ * 阶段①资产：左侧集数侧栏（总和置顶）+ 顶部分类行（人物/服装/道具/场景/群演），
+ * 与分镜一致的布局。逐集提取全剧资产（穷尽列举、跨集按名去重累积），已识别的可一键生成——
+ * 提取与生成可并行；切走再回来会轮询恢复服务端已完成的生成。
  */
 export function AssetsStage({
   projectId,
   scriptId,
   allowedKinds,
+  episodes,
 }: {
   projectId: string;
   scriptId: string | null;
   allowedKinds: string[];
+  episodes: EpisodeLite[];
 }) {
   const router = useRouter();
   const [items, setItems] = useState<PromptItem[]>([]);
   const [extractProg, setExtractProg] = useState<{ done: number; total: number } | null>(null);
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
   const [kindFilter, setKindFilter] = useState<string>("全部");
+  const [epFilter, setEpFilter] = useState<number | null>(null); // null = 总和（全部集）
 
   const loadItems = useCallback(async () => {
     const q = new URLSearchParams({ projectId, workspace: "资产" });
@@ -42,6 +49,14 @@ export function AssetsStage({
     })();
   }, [loadItems]);
 
+  // 切走再回来 / 上次断连留下的 generating：轮询刷新拾起服务端已完成的结果（本地批量/提取时不抢）
+  useEffect(() => {
+    if (batch || extractProg) return;
+    if (!items.some((i) => i.state === "generating")) return;
+    const id = setInterval(() => void loadItems(), 4000);
+    return () => clearInterval(id);
+  }, [items, batch, extractProg, loadItems]);
+
   // 逐集提取全剧资产：每集单独喂模型（穷尽列举），跨集按名字去重累积。
   // 顺序执行——避免两集并发把同名新资产各插一份（去重在落库层按 name）。
   async function extract() {
@@ -49,22 +64,19 @@ export function AssetsStage({
       toast.error("先选剧本");
       return;
     }
-    // 取集列表（含前置资料 0：人物表常列全角色）
-    const epRes = await fetch(`/api/scripts/${scriptId}`);
-    if (!epRes.ok) {
-      toast.error("读取剧本分集失败");
-      return;
-    }
-    const episodes: { episodeNo: number }[] = (await epRes.json()).episodes ?? [];
-    if (episodes.length === 0) {
+    const epList: EpisodeLite[] =
+      episodes.length > 0
+        ? episodes
+        : ((await (await fetch(`/api/scripts/${scriptId}`)).json().catch(() => ({})))?.episodes ?? []);
+    if (epList.length === 0) {
       toast.error("剧本还没有分集");
       return;
     }
-    setExtractProg({ done: 0, total: episodes.length });
+    setExtractProg({ done: 0, total: epList.length });
     let totalAdded = 0;
     let failed = 0;
     try {
-      for (let i = 0; i < episodes.length; i++) {
+      for (let i = 0; i < epList.length; i++) {
         const res = await fetch("/api/prompt-studio/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -72,17 +84,17 @@ export function AssetsStage({
             projectId,
             workspace: "资产",
             scriptId,
-            episodeNo: episodes[i].episodeNo,
+            episodeNo: epList[i].episodeNo,
           }),
         });
         if (res.ok) {
           const data = await res.json();
           totalAdded += data.added ?? 0;
-          setItems(data.items); // 实时显示累积增长
+          setItems(data.items); // 实时显示累积增长（已识别的可同步生成）
         } else {
           failed++;
         }
-        setExtractProg({ done: i + 1, total: episodes.length });
+        setExtractProg({ done: i + 1, total: epList.length });
       }
       await loadItems();
       toast.success(
@@ -122,10 +134,12 @@ export function AssetsStage({
     else toast.error("生成失败（余额不足或服务异常）");
   }
 
+  // 批量生成：作用于当前筛选视图（总和=全剧；选某集/某分类=该范围内待生成）。
+  // 不被「提取中」阻塞——已识别好的可与后续提取并行生成。
   async function generateAll() {
-    const pending = items.filter((it) => it.state !== "done").map((it) => it.id);
+    const pending = shown.filter((it) => it.state !== "done").map((it) => it.id);
     if (pending.length === 0) {
-      toast.info("没有待生成的资产");
+      toast.info("当前范围没有待生成的资产");
       return;
     }
     const total = pending.length;
@@ -183,92 +197,174 @@ export function AssetsStage({
     toast.success("已存为产物");
   }
 
+  // 当前集筛选后的子集（再叠加分类筛选）
+  const inEpisode =
+    epFilter === null ? items : items.filter((i) => (i.episodes ?? []).includes(epFilter));
   const kinds = ["全部", ...ASSET_MODES.filter((m) => allowedKinds.includes(m))];
-  const shown = kindFilter === "全部" ? items : items.filter((i) => i.kind === kindFilter);
+  const shown = kindFilter === "全部" ? inEpisode : inEpisode.filter((i) => i.kind === kindFilter);
+  const pendingCount = shown.filter((i) => i.state !== "done").length;
+  const epCount = (no: number) => items.filter((i) => (i.episodes ?? []).includes(no)).length;
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
-        <Button size="sm" className="h-8" onClick={extract} disabled={!!extractProg || !scriptId}>
-          {extractProg ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" /> 提取中 {extractProg.done}/{extractProg.total} 集
-            </>
-          ) : (
-            <>
-              <ListPlus className="size-3.5" /> 提取资产（逐集全剧）
-            </>
+    <div className="flex gap-4">
+      {/* 左：集数侧栏（总和置顶） */}
+      <aside className="w-44 shrink-0">
+        <div className="max-h-[calc(100vh-16rem)] space-y-1 overflow-y-auto rounded-lg border border-border bg-card p-2">
+          <SidebarRow
+            active={epFilter === null}
+            onClick={() => setEpFilter(null)}
+            icon={<Layers className="size-3.5 shrink-0 opacity-70" />}
+            label="总和"
+            count={items.length}
+            emphasize
+          />
+          {episodes.map((e) => (
+            <SidebarRow
+              key={e.episodeNo}
+              active={epFilter === e.episodeNo}
+              onClick={() => setEpFilter(e.episodeNo)}
+              icon={
+                e.episodeNo === 0 ? <BookOpen className="size-3.5 shrink-0 opacity-70" /> : null
+              }
+              label={e.episodeNo === 0 ? "前置资料" : `第 ${e.episodeNo} 集`}
+              sub={e.episodeNo !== 0 ? e.title : undefined}
+              count={epCount(e.episodeNo)}
+            />
+          ))}
+          {episodes.length === 0 && (
+            <p className="px-2 py-6 text-center text-xs text-muted-foreground">提取后按集归类</p>
           )}
-        </Button>
-        {items.length > 0 && (
-          <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch || !!extractProg}>
-            {batch ? (
+        </div>
+      </aside>
+
+      {/* 右：工具条 + 分类行 + 资产卡片 */}
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+          <Button size="sm" className="h-8" onClick={extract} disabled={!!extractProg || !scriptId}>
+            {extractProg ? (
               <>
-                <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}
+                <Loader2 className="size-3.5 animate-spin" /> 提取中 {extractProg.done}/
+                {extractProg.total} 集 <Elapsed running className="ml-1 text-xs" />
               </>
             ) : (
               <>
-                <Wand2 className="size-3.5" /> 批量生成全部
+                <ListPlus className="size-3.5" /> {items.length > 0 ? "继续提取（逐集）" : "提取资产（逐集全剧）"}
               </>
             )}
           </Button>
-        )}
-        {items.length > 0 && (
-          <Button variant="ghost" size="sm" className="h-8" asChild>
-            <a href={`/api/projects/${projectId}/export?type=assets`} download>
-              <Download className="size-3.5" /> 导出 Excel
-            </a>
-          </Button>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {items.length > 0
-            ? `${items.filter((i) => i.state === "done").length}/${items.length} 已生成`
-            : "先提取，再生成"}
-        </span>
-      </div>
-
-      {items.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {kinds.map((k) => (
-            <button
-              key={k}
-              onClick={() => setKindFilter(k)}
-              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                kindFilter === k
-                  ? "border-primary/60 bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {k}
-              {k !== "全部" && (
-                <span className="ml-1.5 opacity-60">{items.filter((i) => i.kind === k).length}</span>
+          {items.length > 0 && (
+            <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch}>
+              {batch ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}{" "}
+                  <Elapsed running className="ml-1 text-xs" />
+                </>
+              ) : (
+                <>
+                  <Wand2 className="size-3.5" /> 一键生成
+                  {epFilter !== null || kindFilter !== "全部" ? "（本范围" : "（全部"}
+                  {pendingCount > 0 ? ` ${pendingCount}` : ""}）
+                </>
               )}
-            </button>
-          ))}
+            </Button>
+          )}
+          {items.length > 0 && (
+            <Button variant="ghost" size="sm" className="h-8" asChild>
+              <a href={`/api/projects/${projectId}/export?type=assets`} download>
+                <Download className="size-3.5" /> 导出 Excel
+              </a>
+            </Button>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {items.length > 0
+              ? `${shown.filter((i) => i.state === "done").length}/${shown.length} 已生成`
+              : "先提取，再生成（两者可并行）"}
+          </span>
         </div>
-      )}
 
-      {shown.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            还没有资产。点「提取资产」从全剧自动抓出人物/服装/道具/场景/群演，再逐张生成提示词。
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {shown.map((item) => (
-            <PromptItemCard
-              key={item.id}
-              item={item}
-              showKind
-              onGenerate={(refine) => handleGenerateOne(item.id, refine)}
-              onEdit={(text) => editItem(item.id, text)}
-              onSave={() => saveArtifact(item)}
-              onDelete={() => deleteItem(item.id)}
-            />
-          ))}
-        </div>
-      )}
+        {items.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {kinds.map((k) => (
+              <button
+                key={k}
+                onClick={() => setKindFilter(k)}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  kindFilter === k
+                    ? "border-primary/60 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {k}
+                {k !== "全部" && (
+                  <span className="ml-1.5 opacity-60">
+                    {inEpisode.filter((i) => i.kind === k).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {shown.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-sm text-muted-foreground">
+              {items.length === 0
+                ? "还没有资产。点「提取资产」从全剧逐集抓出人物/服装/道具/场景/群演，识别好的可同步生成。"
+                : "该集 / 该分类下暂无资产。"}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {shown.map((item) => (
+              <PromptItemCard
+                key={item.id}
+                item={item}
+                showKind
+                onGenerate={(refine) => handleGenerateOne(item.id, refine)}
+                onEdit={(text) => editItem(item.id, text)}
+                onSave={() => saveArtifact(item)}
+                onDelete={() => deleteItem(item.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function SidebarRow({
+  active,
+  onClick,
+  icon,
+  label,
+  sub,
+  count,
+  emphasize,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  label: string;
+  sub?: string;
+  count: number;
+  emphasize?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`block w-full rounded-lg px-2.5 py-2 text-left transition-colors ${
+        active
+          ? "bg-primary/12 text-foreground shadow-[inset_0_0_0_1px_rgba(216,177,115,.35)]"
+          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+      } ${emphasize ? "border-b border-border/60" : ""}`}
+    >
+      <div className="flex items-center gap-1.5 text-sm">
+        {icon}
+        <span className={`truncate ${active || emphasize ? "text-primary" : ""}`}>{label}</span>
+        {sub && <span className="truncate text-xs opacity-60">{sub}</span>}
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums opacity-60">{count}</span>
+      </div>
+    </button>
   );
 }

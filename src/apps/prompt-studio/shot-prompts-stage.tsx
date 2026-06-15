@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Elapsed } from "./stopwatch";
 import type { Shot } from "./types";
 
 const STATE_LABEL: Record<Shot["stillState"], { text: string; cls: string }> = {
@@ -123,7 +124,8 @@ export function ShotPromptsStage({
         <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch}>
           {batch ? (
             <>
-              <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}
+              <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}{" "}
+              <Elapsed running className="ml-1 text-xs" />
             </>
           ) : (
             <>
@@ -243,6 +245,7 @@ function ShotPromptCard({
           <span className={`ml-auto text-xs ${st.cls}`}>
             {busy && <Loader2 className="mr-1 inline size-3 animate-spin" />}
             {st.text}
+            {busy && <Elapsed running className="ml-1" />}
           </span>
         </div>
 

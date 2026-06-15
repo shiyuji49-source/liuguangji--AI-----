@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { shots, scriptEpisodes, promptItems, projects } from "@/lib/db/schema";
 import { toErrorResponse } from "@/lib/auth-helpers";
@@ -42,12 +42,18 @@ export async function POST(req: Request, { params }: Params) {
 
     const spec = await db.query.projects.findFirst({ where: eq(projects.id, shot.projectId) });
 
-    // 并发守卫：同一目标已在生成中则拒绝（允许 done/failed → 重新生成）
+    // 并发守卫：同一目标已在生成中则拒绝（允许 done/failed 重生成；超 5 分钟的 generating 视为断连卡死，可重新认领）
     const stateColumn = target === "still" ? shots.stillState : shots.videoState;
+    const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
     const claimed = await db
       .update(shots)
       .set({ [stateCol]: "generating", updatedAt: new Date() })
-      .where(and(eq(shots.id, id), ne(stateColumn, "generating")))
+      .where(
+        and(
+          eq(shots.id, id),
+          or(ne(stateColumn, "generating"), lt(shots.updatedAt, staleBefore))
+        )
+      )
       .returning({ id: shots.id });
     if (claimed.length === 0) {
       return Response.json({ error: "该镜正在生成中，请勿重复点击" }, { status: 409 });

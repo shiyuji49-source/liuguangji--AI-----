@@ -135,6 +135,17 @@ export function PromptStudioApp({
     return () => controller.abort();
   }, [loadShots]);
 
+  // 切走再回来 / 上次断连留下的 generating：轮询刷新拾起服务端已完成的静帧/视频（本地批量时不抢）
+  useEffect(() => {
+    if (batchBusy) return;
+    const stuck =
+      shots.some((s) => s.stillState === "generating" || s.videoState === "generating") ||
+      segments.some((s) => s.state === "generating");
+    if (!stuck) return;
+    const id = setInterval(() => void loadShots(), 4000);
+    return () => clearInterval(id);
+  }, [shots, segments, batchBusy, loadShots]);
+
   if (stages.length === 0) {
     return <p className="py-16 text-center text-sm text-muted-foreground">当前角色无可用工作区</p>;
   }
@@ -285,7 +296,12 @@ export function PromptStudioApp({
               setEpNo(null);
             }} />
           )}
-          <AssetsStage projectId={projectId} scriptId={scriptId} allowedKinds={allowedKinds} />
+          <AssetsStage
+            projectId={projectId}
+            scriptId={scriptId}
+            allowedKinds={allowedKinds}
+            episodes={overview.map((e) => ({ episodeNo: e.episodeNo, title: e.title }))}
+          />
         </>
       ) : (
         /* ②③④：左侧集列表（分集展示）+ 右侧阶段内容 */

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { shots, videoSegments, scriptEpisodes, promptItems, projects } from "@/lib/db/schema";
 import { toErrorResponse } from "@/lib/auth-helpers";
@@ -20,11 +20,17 @@ export async function POST(req: Request, { params }: Params) {
 
     const { segment, user, project } = await loadSegmentChecked(id);
 
-    // 并发守卫：生成中拒绝（允许 done/failed 重新生成）
+    // 并发守卫：生成中拒绝（允许 done/failed 重生成；超 5 分钟的 generating 视为断连卡死，可重新认领）
+    const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
     const claimed = await db
       .update(videoSegments)
       .set({ state: "generating", updatedAt: new Date() })
-      .where(and(eq(videoSegments.id, id), ne(videoSegments.state, "generating")))
+      .where(
+        and(
+          eq(videoSegments.id, id),
+          or(ne(videoSegments.state, "generating"), lt(videoSegments.updatedAt, staleBefore))
+        )
+      )
       .returning({ id: videoSegments.id });
     if (claimed.length === 0) {
       return Response.json({ error: "该片段正在生成中，请勿重复点击" }, { status: 409 });

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Elapsed } from "./stopwatch";
 import type { Shot } from "./types";
 
 export type VideoSegment = {
@@ -164,12 +165,14 @@ export function VideoSegmentsStage({
         <Button size="sm" className="h-8" onClick={() => plan(false)} disabled={planning || !!batch}>
           {planning ? <Loader2 className="size-3.5 animate-spin" /> : <Scissors className="size-3.5" />}
           {segments.length > 0 ? "重新划分片段" : "划分片段"}
+          {planning && <Elapsed running className="ml-1 text-xs" />}
         </Button>
         {segments.length > 0 && (
           <Button variant="outline" size="sm" className="h-8" onClick={generateAll} disabled={!!batch || planning}>
             {batch ? (
               <>
-                <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}
+                <Loader2 className="size-3.5 animate-spin" /> 生成中 {batch.done}/{batch.total}{" "}
+                <Elapsed running className="ml-1 text-xs" />
               </>
             ) : (
               <>
@@ -304,6 +307,7 @@ function SegmentCard({
           <span className={`ml-auto text-xs ${st.cls}`}>
             {busy && <Loader2 className="mr-1 inline size-3 animate-spin" />}
             {st.text}
+            {busy && <Elapsed running className="ml-1" />}
           </span>
         </div>
 

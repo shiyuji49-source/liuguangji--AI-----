@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Elapsed } from "./stopwatch";
 
 export type PromptItem = {
   id: string;
@@ -82,6 +83,7 @@ export function PromptItemCard({
           <span className={`ml-auto shrink-0 text-xs ${st.cls}`}>
             {busy && <Loader2 className="mr-1 inline size-3 animate-spin" />}
             {st.text}
+            {busy && <Elapsed running className="ml-1" />}
           </span>
         </div>
 
