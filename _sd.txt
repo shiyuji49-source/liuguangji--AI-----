@@ -1,0 +1,38 @@
+=== Seedance 2.0 探针（新参数方式 480p/5s/无声）model: doubao-seedance-2-0-260128 ===
+CREATE HTTP 200 → {"id":"cgt-20260615165846-k8hsm"}
+轮询 5s → status=running
+轮询 10s → status=running
+轮询 15s → status=running
+轮询 20s → status=running
+轮询 25s → status=running
+轮询 30s → status=running
+轮询 35s → status=running
+轮询 40s → status=running
+轮询 45s → status=running
+轮询 50s → status=running
+轮询 55s → status=running
+轮询 60s → status=running
+轮询 65s → status=running
+轮询 70s → status=running
+轮询 75s → status=running
+轮询 80s → status=running
+轮询 85s → status=running
+轮询 90s → status=running
+轮询 95s → status=running
+轮询 100s → status=running
+轮询 105s → status=running
+轮询 110s → status=running
+轮询 115s → status=running
+轮询 120s → status=running
+轮询 125s → status=running
+轮询 130s → status=running
+轮询 135s → status=running
+轮询 140s → status=running
+轮询 145s → status=running
+轮询 150s → status=running
+轮询 155s → status=running
+轮询 160s → status=succeeded
+resolution/ratio/duration: 480p 16:9 5
+video_url: https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/doubao-seedance-2-0/02178151392659300
+usage: {"completion_tokens":50638,"total_tokens":50638}
+error: undefined

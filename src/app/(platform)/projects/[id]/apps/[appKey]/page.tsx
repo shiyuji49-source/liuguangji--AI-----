@@ -4,6 +4,7 @@ import { getApp, isAppLive, appsVisibleFor } from "@/apps/registry";
 import { PromptStudioApp } from "@/apps/prompt-studio";
 import { ScriptDoctorApp } from "@/apps/script-doctor";
 import { ImageStudioApp } from "@/apps/image-studio";
+import { VideoStudioApp } from "@/apps/video-studio";
 
 export default async function AppHostPage({
   params,
@@ -47,6 +48,8 @@ export default async function AppHostPage({
       return <PromptStudioApp {...common} />;
     case "image-studio":
       return <ImageStudioApp {...common} />;
+    case "video-studio":
+      return <VideoStudioApp {...common} />;
     default:
       notFound();
   }

@@ -7,7 +7,7 @@ import type { ProjectRole } from "@/lib/db/schema";
 export type AppKey = "script-doctor" | "prompt-studio" | "image-studio" | "video-studio";
 export type Phase = "P0" | "P1" | "P2";
 
-export const CURRENT_PHASE: Phase = "P1"; // P1 上线：图像生成器点亮（video-studio P2 仍隐藏）
+export const CURRENT_PHASE: Phase = "P2"; // P2 上线：图像 + 视频生成器全部点亮
 
 export interface AppDef {
   key: AppKey;
