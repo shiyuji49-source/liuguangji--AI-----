@@ -42,6 +42,11 @@ services:
       # NextAuth 在 IP/反代后面需要信任 Host
       AUTH_TRUST_HOST: "true"
       NODE_ENV: production
+      # 生成产物（图片/视频）落持久卷，否则重建容器即丢
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /data/assets
+    volumes:
+      - assets:/data/assets
     depends_on:
       db:
         condition: service_healthy
@@ -50,3 +55,4 @@ services:
 
 volumes:
   pgdata:
+  assets:
