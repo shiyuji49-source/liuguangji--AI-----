@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { wallets, creditLedger, type LedgerReason } from "../db/schema";
 import { getPricing } from "./pricing";
-import { llmPriceTier } from "./defaults";
+import { llmPriceTier, imagePriceEngine, type ImageTier } from "./defaults";
 
 /**
  * 积分计费统一入口（规划书 §6）。
@@ -116,5 +116,42 @@ export async function estimateLlmMaxCredits(model: string, inputChars: number, m
     inputTokens: Math.ceil(inputChars * 1.2),
     outputTokens: maxOutputTokens,
   });
+  return credits;
+}
+
+// ===== 图片计费（按引擎×档位×张数，单价确定，预估=实扣）=====
+
+/** 单价表键：image.{gpt|nano}.{1k|2k|4k}；成本端确定，预估即实扣 */
+export async function calcImageCostCredits(opts: { model: string; tier: ImageTier; n?: number }) {
+  const p = await getPricing();
+  const engine = imagePriceEngine(opts.model);
+  const per = p[`image.${engine}.${opts.tier}`];
+  const n = Math.max(1, Math.trunc(opts.n ?? 1));
+  const raw = (Number.isFinite(per) ? per : 0) * n;
+  const credits = Math.max(Math.ceil(raw), Math.ceil(p["image.min_per_call"] ?? 1));
+  return { credits, engine, per };
+}
+
+/** 出图成功后扣费（reason=image）。失败不调用本函数＝不收费。 */
+export async function chargeImage(opts: {
+  userId: string;
+  model: string;
+  tier: ImageTier;
+  n?: number;
+  ref?: LedgerRef;
+}) {
+  const { credits, engine, per } = await calcImageCostCredits(opts);
+  const { balanceAfter } = await applyCredits({
+    userId: opts.userId,
+    delta: -credits,
+    reason: "image",
+    ref: { model: opts.model, engine, tier: opts.tier, n: opts.n ?? 1, per, ...opts.ref },
+  });
+  return { credits, balanceAfter };
+}
+
+/** 图片预检上限（确定单价，估=实扣） */
+export async function estimateImageMaxCredits(model: string, tier: ImageTier, n = 1) {
+  const { credits } = await calcImageCostCredits({ model, tier, n });
   return credits;
 }

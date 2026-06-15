@@ -15,12 +15,18 @@ export const DEFAULT_PRICING: Record<string, number> = {
   "llm.kimi.out_per_1m": 2700,
   "llm.cached_in_ratio": 0.1, // 缓存命中输入按 0.1× 计
   "llm.min_per_call": 5, // 单次最低收费（积分）
-  // —— 图片（积分/张 + 输入词元）
-  "image.per_1k": 24,
-  "image.per_2k": 36,
-  "image.per_4k": 48,
-  "image.input_per_1m": 5300,
-  // —— 视频（积分/千token；tokens=宽×高×帧率×秒÷1024，结算用方舟实际 usage）
+  // —— 图片（积分/张，按引擎×档位；DMXAPI 成本差异大，分开定价，admin 可改）
+  // gpt-image-2：低/中/高 ≈ 成本 4/38/152 积分 ×~1.5 加价（DMXAPI 实价上线前核）
+  "image.gpt.1k": 12,
+  "image.gpt.2k": 60,
+  "image.gpt.4k": 230,
+  // nano banana pro(gemini-3-pro-image)：1K/2K 成本 ~97、4K ~173 ×~1.5
+  "image.nano.1k": 150,
+  "image.nano.2k": 150,
+  "image.nano.4k": 260,
+  "image.min_per_call": 5,
+  // —— 视频（积分/千 token；结算用方舟实际 usage；Seedance 480p/720p/1080p 三档）
+  "video.480p.per_1k_tokens": 5.0,
   "video.720p.per_1k_tokens": 6.9,
   "video.1080p.per_1k_tokens": 7.65,
 };
@@ -30,3 +36,10 @@ export function llmPriceTier(model: string): "opus" | "sonnet" | "kimi" {
   if (model.includes("kimi")) return "kimi";
   return model.includes("opus") ? "opus" : "sonnet";
 }
+
+// 图片模型 → 定价引擎键（gpt-image-2 → gpt；gemini-3-pro-image → nano）
+export function imagePriceEngine(model: string): "gpt" | "nano" {
+  return /gemini|nano/i.test(model) ? "nano" : "gpt";
+}
+
+export type ImageTier = "1k" | "2k" | "4k";
