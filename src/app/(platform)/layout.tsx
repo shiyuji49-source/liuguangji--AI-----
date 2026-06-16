@@ -38,7 +38,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     <div className="min-h-screen p-3 sm:p-5">
       <div className="app-frame mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-[1800px]">
         {/* 左侧图标 Rail */}
-        <aside className="flex w-[76px] shrink-0 flex-col items-center border-r border-white/5 py-6">
+        <aside className="flex w-[76px] shrink-0 flex-col items-center border-r border-border py-6">
           <Link
             href="/projects"
             className="text-liuguang mb-7 text-2xl font-semibold leading-none"

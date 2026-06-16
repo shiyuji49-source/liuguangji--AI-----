@@ -37,7 +37,7 @@ export function MemberRail() {
   if (!projectId || members.length === 0) return null;
 
   return (
-    <aside className="hidden w-[68px] shrink-0 flex-col items-center gap-3 border-l border-white/5 py-6 md:flex">
+    <aside className="hidden w-[68px] shrink-0 flex-col items-center gap-3 border-l border-border py-6 md:flex">
       <Link
         href={`/projects/${projectId}`}
         className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:text-foreground"
