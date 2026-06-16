@@ -36,13 +36,13 @@ function genError(msg: string, status = 502) {
   return Object.assign(new Error(msg), { status });
 }
 
-// gpt-image-2（DMXAPI / OpenAI Images）：**清晰度 = 真实分辨率 size**（不是 quality！）。
-// 档位 × 朝向 → size。文档枚举的合法值 + 约束（边长≤3840、宽高均 16 倍数、比例≤3:1、
-// 总像素 65.5万~829万）；2K竖/4K方文档未枚举但满足全部约束。
-const GPT_SIZE: Record<ImageTier, { land: string; port: string; square: string }> = {
-  "1k": { land: "1536x1024", port: "1024x1536", square: "1024x1024" },
-  "2k": { land: "2048x1152", port: "1152x2048", square: "2048x2048" },
-  "4k": { land: "3840x2160", port: "2160x3840", square: "2880x2880" },
+// gpt-image-2（DMXAPI / OpenAI Images）：**清晰度=分辨率档，画幅=精确比例 size**（不是 quality！）。
+// 档位 × 比例 → size，均满足约束（边长≤3840、宽高均 16 倍数、比例≤3:1、总像素 65.5万~829万）。
+// 1152×2048、2880² 等非枚举尺寸已实测 200 接受，证明 DMXAPI 按约束公式放行、非仅枚举表。
+const GPT_SIZE_TABLE: Record<ImageTier, Record<string, string>> = {
+  "1k": { "1:1": "1024x1024", "3:4": "768x1024", "9:16": "720x1280", "4:3": "1024x768", "16:9": "1280x720" },
+  "2k": { "1:1": "2048x2048", "3:4": "1536x2048", "9:16": "1152x2048", "4:3": "2048x1536", "16:9": "2048x1152" },
+  "4k": { "1:1": "2880x2880", "3:4": "2400x3200", "9:16": "2160x3840", "4:3": "3200x2400", "16:9": "3840x2160" },
 };
 function aspectOrient(aspect?: string): -1 | 0 | 1 {
   const [a, b] = (aspect ?? "").split(":").map(Number);
@@ -50,9 +50,11 @@ function aspectOrient(aspect?: string): -1 | 0 | 1 {
   return a > b ? 1 : -1; // 1 横 / -1 竖 / 0 方
 }
 function gptSize(tier: ImageTier, aspect?: string): string {
-  const s = GPT_SIZE[tier];
-  const o = aspectOrient(aspect);
-  return o > 0 ? s.land : o < 0 ? s.port : s.square;
+  if (aspect === "auto" || !aspect) return "auto"; // 自动：交给模型按提示词选最佳尺寸
+  const t = GPT_SIZE_TABLE[tier];
+  if (t[aspect]) return t[aspect];
+  const o = aspectOrient(aspect); // 未列比例按朝向就近
+  return o > 0 ? t["16:9"] : o < 0 ? t["9:16"] : t["1:1"];
 }
 // 质量固定中档：兼顾画质/速度/成本，避开 high 的超长耗时（实测 1024/high≈210s 易触发网关超时）。
 const GPT_QUALITY = "medium";

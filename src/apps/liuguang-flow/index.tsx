@@ -57,9 +57,17 @@ function Elapsed({ running }: { running: boolean }) {
   return <span className="tabular-nums opacity-80">{m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`}</span>;
 }
 
-// 画幅：nano 自由比例；gpt-image-2 只给朝向（实际比例随清晰度）。
+// 画幅：nano 自由比例；gpt-image-2 用官方六项（DMXAPI 按约束出精确 size）。
 const ASPECTS_NANO = ["21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"];
-const ASPECTS_GPT = ["16:9", "1:1", "9:16"];
+const ASPECTS_GPT = ["auto", "1:1", "3:4", "9:16", "4:3", "16:9"];
+const GPT_ASPECT_LABEL: Record<string, string> = {
+  auto: "自动",
+  "1:1": "方形 1:1",
+  "3:4": "竖版 3:4",
+  "9:16": "故事版 9:16",
+  "4:3": "横版 4:3",
+  "16:9": "宽屏 16:9",
+};
 function aspectsFor(engine: "gpt" | "nano") {
   return engine === "nano" ? ASPECTS_NANO : ASPECTS_GPT;
 }
@@ -75,8 +83,9 @@ function snapAspect(aspect: string, engine: "gpt" | "nano"): string {
   return o > 0 ? "16:9" : o < 0 ? "9:16" : "1:1";
 }
 function aspectLabel(aspect: string, engine: "gpt" | "nano"): string {
+  if (engine === "gpt") return GPT_ASPECT_LABEL[aspect] ?? aspect;
   const word = ORIENT_WORD[String(aspectOrient(aspect)) as "1" | "-1" | "0"];
-  return engine === "gpt" ? word : `${aspect} ${word}`;
+  return `${aspect} ${word}`;
 }
 
 const ENGINES = [
@@ -588,7 +597,7 @@ export function LiuguangFlowApp({
           </Select>
 
           <Select value={aspect} onValueChange={setAspect}>
-            <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {aspectsFor(engine).map((r) => <SelectItem key={r} value={r}>{aspectLabel(r, engine)}</SelectItem>)}
             </SelectContent>
@@ -616,8 +625,8 @@ export function LiuguangFlowApp({
               </button>
             </div>
           )}
-          {engine === "gpt" && (
-            <span className="text-[10px] text-muted-foreground">image2 仅 方/横/竖；要任意比例切 nano</span>
+          {aspect === "auto" && engine === "gpt" && (
+            <span className="text-[10px] text-muted-foreground">自动＝模型按提示词选尺寸</span>
           )}
         </div>
 
