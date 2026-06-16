@@ -3,35 +3,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Clapperboard,
-  Image as ImageIcon,
-  Film,
   Loader2,
-  Sparkles,
+  Plus,
   Download,
   X,
-  ImagePlus,
-  FileDown,
   Trash2,
+  ArrowUp,
+  Search,
   Upload,
+  FileDown,
+  Image as ImageIcon,
+  Film,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectContextBadges } from "@/components/project-context-badges";
 import { ASSET_MODES } from "@/apps/registry";
 import type { ProjectRole, ProjectTier } from "@/lib/db/schema";
 
 /**
- * 应用 · 鎏光flow（P2，合并图像+视频生成器，Google-Flow 式工作台）。
- * Phase 1：四区布局 + 图像模式端到端（image2 / nano banana pro，经 DMXAPI）。
- *   左=资产墙，中=舞台画布（放大预览/下载），右=History 版本栈，底=命令条。
- * 视频模式占位禁用，Phase 3 接 Seedance。复用 /api/image-studio /api/video-studio /api/assets。
+ * 应用 · 鎏光flow（P2）：Google-Flow 式生产工作台（图像+视频）。
+ * 布局对齐 Flow：主区=项目媒体网格（全宽）｜底部浮动命令条（[+] 上传/带入 在左，
+ * 提示框居中，模型+设置弹层在右）｜设置弹层=图片/视频·画幅·张数·模型·(时长)·点数。
+ * 图片模式下「上传图」=改图/编辑底图（经 gpt /v1/images/edits、nano inline_data）。
+ * Phase1/2 图像端到端；视频模式占位（Phase3 接 Seedance）。复用 /api/image-studio /api/assets。
  */
 
-// 读秒（内联，避免跨应用 import；与 prompt-studio/stopwatch 同实现）
+// 读秒（内联，避免跨应用 import）
 function useStopwatch(running: boolean): number {
   const [sec, setSec] = useState(0);
   useEffect(() => {
@@ -57,17 +58,9 @@ function Elapsed({ running }: { running: boolean }) {
   return <span className="tabular-nums opacity-80">{m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`}</span>;
 }
 
-// 画幅：nano 自由比例；gpt-image-2 用官方六项（DMXAPI 按约束出精确 size）。
-const ASPECTS_NANO = ["21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"];
-const ASPECTS_GPT = ["auto", "1:1", "3:4", "9:16", "4:3", "16:9"];
-const GPT_ASPECT_LABEL: Record<string, string> = {
-  auto: "自动",
-  "1:1": "方形 1:1",
-  "3:4": "竖版 3:4",
-  "9:16": "故事版 9:16",
-  "4:3": "横版 4:3",
-  "16:9": "宽屏 16:9",
-};
+// 画幅：图片模式 gpt 用官方比例（DMXAPI 按约束出精确 size）；nano 自由（这里给主流 5 项）。
+const ASPECTS_GPT = ["auto", "16:9", "4:3", "1:1", "3:4", "9:16"];
+const ASPECTS_NANO = ["16:9", "4:3", "1:1", "3:4", "9:16"];
 function aspectsFor(engine: "gpt" | "nano") {
   return engine === "nano" ? ASPECTS_NANO : ASPECTS_GPT;
 }
@@ -76,16 +69,10 @@ function aspectOrient(aspect: string): -1 | 0 | 1 {
   if (!a || !b || a === b) return 0;
   return a > b ? 1 : -1;
 }
-const ORIENT_WORD = { "1": "横", "-1": "竖", "0": "方" } as const;
 function snapAspect(aspect: string, engine: "gpt" | "nano"): string {
   if (aspectsFor(engine).includes(aspect)) return aspect;
   const o = aspectOrient(aspect);
   return o > 0 ? "16:9" : o < 0 ? "9:16" : "1:1";
-}
-function aspectLabel(aspect: string, engine: "gpt" | "nano"): string {
-  if (engine === "gpt") return GPT_ASPECT_LABEL[aspect] ?? aspect;
-  const word = ORIENT_WORD[String(aspectOrient(aspect)) as "1" | "-1" | "0"];
-  return `${aspect} ${word}`;
 }
 
 const ENGINES = [
@@ -97,17 +84,41 @@ const TIERS = [
   { key: "2k", label: "高清 2K" },
   { key: "4k", label: "超清 4K" },
 ] as const;
+// 点数预估（与 DEFAULT_PRICING 对齐；实际以服务端计费为准）
+const IMG_PRICE: Record<"gpt" | "nano", Record<"1k" | "2k" | "4k", number>> = {
+  gpt: { "1k": 12, "2k": 60, "4k": 230 },
+  nano: { "1k": 150, "2k": 150, "4k": 260 },
+};
+
+const CATEGORIES = ["全部", "图片", "视频", "角色", "场景", "上传的内容"] as const;
+function inCategory(a: Asset, cat: string): boolean {
+  if (cat === "全部") return true;
+  if (cat === "图片") return a.kind !== "视频" && a.kind !== "参考";
+  if (cat === "视频") return a.kind === "视频";
+  if (cat === "角色") return a.kind === "人物";
+  if (cat === "场景") return a.kind === "场景";
+  if (cat === "上传的内容") return a.kind === "参考";
+  return true;
+}
 
 type Asset = {
   id: string;
   kind: string;
   atName: string;
   filePath: string;
-  meta: { engine?: string; tier?: string; prompt?: string } | null;
+  meta: { engine?: string; tier?: string; prompt?: string; uploaded?: boolean } | null;
 };
-
-// 从提示词生成器带入的资产提示词（按类型/集数分类）
 type ImportItem = { name: string; promptText: string; kind: string; episodes: number[] };
+
+/** 画幅迷你图标（按比例画矩形，仿 Flow） */
+function AspectIcon({ r }: { r: string }) {
+  if (r === "auto") return <span className="text-[10px] leading-none">A</span>;
+  const [a, b] = r.split(":").map(Number);
+  const max = 16;
+  const w = a >= b ? max : Math.round((a / b) * max);
+  const h = b >= a ? max : Math.round((b / a) * max);
+  return <span style={{ width: w, height: h }} className="block rounded-[2px] border border-current" />;
+}
 
 export function LiuguangFlowApp({
   projectId,
@@ -131,23 +142,26 @@ export function LiuguangFlowApp({
   const [aspect, setAspect] = useState(() => snapAspect(projectAspect || "9:16", "gpt"));
   const [tier, setTier] = useState<"1k" | "2k" | "4k">("2k");
   const [kind, setKind] = useState<string>("人物");
+  const [count, setCount] = useState(1);
   const [prompt, setPrompt] = useState("");
   const [atName, setAtName] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState("全部");
-  const [refIds, setRefIds] = useState<string[]>([]);
-  const [lightbox, setLightbox] = useState<Asset | null>(null);
-  const [leftTab, setLeftTab] = useState<"ref" | "wall">("wall");
+  const [category, setCategory] = useState<string>("全部");
+  const [query, setQuery] = useState("");
+  const [inputIds, setInputIds] = useState<string[]>([]); // 本次喂给模型的图（改图/参考底图）
+  const [preview, setPreview] = useState<Asset | null>(null);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importDim, setImportDim] = useState<"type" | "episode">("type");
+  const [importQuery, setImportQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [assetPrompts, setAssetPrompts] = useState<ImportItem[]>([]);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importDim, setImportDim] = useState<"type" | "episode">("type");
-  const [importQuery, setImportQuery] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/image-studio/assets?projectId=${projectId}`);
@@ -178,14 +192,16 @@ export function LiuguangFlowApp({
     })();
   }, [load, loadAssetPrompts]);
 
-  const selected = assets.find((a) => a.id === selectedId) ?? null;
-  const refAssets = assets.filter((a) => refIds.includes(a.id));
-  // History：与选中图同名（@名）的历次生成
-  const history = selected ? assets.filter((a) => a.atName === selected.atName) : [];
-
-  function toggleRef(id: string) {
-    setRefIds((r) => (r.includes(id) ? r.filter((x) => x !== id) : r.length >= 8 ? r : [...r, id]));
+  const inputAssets = assets.filter((a) => inputIds.includes(a.id));
+  function toggleInput(id: string) {
+    setInputIds((r) => (r.includes(id) ? r.filter((x) => x !== id) : r.length >= 8 ? r : [...r, id]));
   }
+
+  // 网格（按分类 + 搜索）
+  const shown = assets.filter((a) => inCategory(a, category) && (!query.trim() || a.atName.includes(query.trim())));
+
+  const priceEach = IMG_PRICE[engine][tier];
+  const estCredits = priceEach * count;
 
   async function generate() {
     if (mode !== "image") return;
@@ -194,6 +210,7 @@ export function LiuguangFlowApp({
       return;
     }
     setBusy(true);
+    setSettingsOpen(false);
     try {
       const res = await fetch("/api/image-studio/generate", {
         method: "POST",
@@ -205,8 +222,9 @@ export function LiuguangFlowApp({
           tier,
           kind,
           aspectRatio: aspect,
+          n: count,
           atName: atName.trim() || undefined,
-          refAssetIds: refIds.length ? refIds : undefined,
+          refAssetIds: inputIds.length ? inputIds : undefined, // 改图/参考底图
         }),
       });
       const data = await res.json();
@@ -214,24 +232,15 @@ export function LiuguangFlowApp({
         toast.error(data.error ?? "出图失败");
         return;
       }
-      toast.success(`出图成功，已入资产墙（消耗 ${data.credits} 积分）`);
+      toast.success(`出图成功（消耗 ${data.credits} 积分）`);
       await load();
-      if (data.assets?.[0]?.id) setSelectedId(data.assets[0].id);
+      if (data.assets?.[0]) setPreview(data.assets[0]);
     } finally {
       setBusy(false);
     }
   }
 
-  async function del(a: Asset) {
-    if (!confirm("删除这张图？")) return;
-    await fetch(`/api/image-studio/assets/${a.id}`, { method: "DELETE" });
-    setAssets((arr) => arr.filter((x) => x.id !== a.id));
-    if (selectedId === a.id) setSelectedId(null);
-    setRefIds((r) => r.filter((x) => x !== a.id));
-  }
-
-  // ➕ 上传新参考：外部图（定妆照/实景/风格板）→ 入库 kind=参考，自动加入本次参考槽
-  async function uploadRef(file: File) {
+  async function uploadImage(file: File) {
     setUploading(true);
     try {
       const fd = new FormData();
@@ -244,19 +253,22 @@ export function LiuguangFlowApp({
         return;
       }
       setAssets((arr) => [data.asset, ...arr]);
-      setRefIds((r) => (r.includes(data.asset.id) ? r : r.length >= 8 ? r : [...r, data.asset.id]));
-      toast.success("参考图已上传并加入本次参考");
+      setInputIds((r) => (r.includes(data.asset.id) ? r : r.length >= 8 ? r : [...r, data.asset.id]));
+      toast.success(mode === "image" ? "已加入：将作为改图/编辑底图" : "已上传");
     } finally {
       setUploading(false);
     }
   }
 
-  const wallAssets = assets.filter((a) => a.kind !== "参考"); // 已生成的资产图
-  const uploadedRefs = assets.filter((a) => a.kind === "参考"); // 上传的参考
-  const kinds = ["全部", ...ASSET_MODES, "静帧", "视频"];
-  const shown = filter === "全部" ? wallAssets : wallAssets.filter((a) => a.kind === filter);
+  async function del(a: Asset) {
+    if (!confirm("删除这张？")) return;
+    await fetch(`/api/image-studio/assets/${a.id}`, { method: "DELETE" });
+    setAssets((arr) => arr.filter((x) => x.id !== a.id));
+    setInputIds((r) => r.filter((x) => x !== a.id));
+    if (preview?.id === a.id) setPreview(null);
+  }
 
-  // 「从提示词生成器带入」分组：按类型(人物/服装/道具/场景/群演) 或 按集
+  // 带入分组
   const importFiltered = assetPrompts.filter((p) => !importQuery.trim() || p.name.includes(importQuery.trim()));
   const importGroups: { label: string; items: ImportItem[] }[] =
     importDim === "type"
@@ -287,391 +299,340 @@ export function LiuguangFlowApp({
           productionType={projectProductionType}
           styleGenre={projectStyleGenre}
         />
-        <span className="ml-auto text-[11px] text-muted-foreground">图像+视频统一工作台 · 出图入资产墙</span>
+        <div className="relative ml-auto w-64 max-w-[40vw]">
+          <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索媒体（按名字）"
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
       </div>
 
-      {/* 中部三区 */}
+      {/* 中部：左分类导航 + 主媒体网格 */}
       <div className="flex min-h-0 flex-1 gap-3">
-        {/* 左 · 参考图 / 已生成的资产图（两来源严格分离） */}
-        <aside className="flex w-64 shrink-0 flex-col gap-2">
-          <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as "ref" | "wall")}>
-            <TabsList className="grid h-8 w-full grid-cols-2">
-              <TabsTrigger value="ref" className="text-xs">
-                参考图{refIds.length ? `·${refIds.length}` : ""}
-              </TabsTrigger>
-              <TabsTrigger value="wall" className="text-xs">已生成的资产图</TabsTrigger>
-            </TabsList>
-          </Tabs>
+        <aside className="flex w-36 shrink-0 flex-col gap-0.5">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCategory(c)}
+              className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                category === c
+                  ? "bg-primary/12 text-foreground shadow-[inset_0_0_0_1px_rgba(216,177,115,.35)]"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              <span className={category === c ? "text-primary" : ""}>{c}</span>
+              <span className="text-[11px] tabular-nums opacity-50">{assets.filter((a) => inCategory(a, c)).length}</span>
+            </button>
+          ))}
+        </aside>
 
-          {leftTab === "ref" ? (
-            /* Tab A · 参考图（本次生成喂给模型的输入） */
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void uploadRef(f);
-                  e.target.value = "";
-                }}
-              />
-              <Button variant="outline" size="sm" className="h-8" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-                上传新参考
-              </Button>
-              <p className="text-[10px] leading-tight text-muted-foreground">
-                上传外部图（定妆照/实景/风格板）；或到「已生成的资产图」把图设为参考。⚠️Seedance 不支持真人脸参考。
-              </p>
-
-              {refAssets.length > 0 && (
-                <div className="space-y-1">
-                  <div className="flex items-center text-[11px] text-muted-foreground">
-                    本次参考 {refAssets.length}/8
-                    <button onClick={() => setRefIds([])} className="ml-auto hover:text-foreground" title="清空">清空</button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {refAssets.map((a) => (
-                      <div key={a.id} className="relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full rounded border border-primary/50 object-cover" />
-                        <button onClick={() => toggleRef(a.id)} title="移除" className="absolute -right-1 -top-1 rounded-full bg-background text-muted-foreground hover:text-destructive">
-                          <X className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="text-[11px] text-muted-foreground">已上传的参考库</div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
-                {uploadedRefs.length === 0 ? (
-                  <p className="px-2 py-8 text-center text-xs text-muted-foreground">还没上传参考图，点上方「上传新参考」</p>
-                ) : (
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {uploadedRefs.map((a) => {
-                      const isRef = refIds.includes(a.id);
-                      return (
-                        <button
-                          key={a.id}
-                          onClick={() => toggleRef(a.id)}
-                          title={`${a.atName}${isRef ? "（已选为参考）" : ""}`}
-                          className={`relative overflow-hidden rounded border-2 ${isRef ? "border-primary" : "border-transparent hover:border-border"}`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card/40 p-3">
+          {shown.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+              <ImageIcon className="size-8 opacity-40" />
+              <span>{assets.length === 0 ? "还没有媒体——在下方写提示词出图" : "该分类下没有媒体"}</span>
             </div>
           ) : (
-            /* Tab B · 已生成的资产图（项目产物网格） */
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
-              <div className="flex flex-wrap gap-1">
-                {kinds.map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setFilter(k)}
-                    className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                      filter === k
-                        ? "border-primary/60 bg-primary/10 text-primary"
-                        : "border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {k}
-                    {k !== "全部" && <span className="ml-1 opacity-60">{wallAssets.filter((a) => a.kind === k).length}</span>}
-                  </button>
-                ))}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {shown.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setPreview(a)}
+                  className="group relative overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
+                  title={a.atName}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
+                  {inputIds.includes(a.id) && (
+                    <span className="absolute left-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">已选</span>
+                  )}
+                  {a.kind === "参考" && (
+                    <span className="absolute right-1 top-1 rounded-full bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground backdrop-blur">上传</span>
+                  )}
+                  <div className="truncate bg-background/80 px-1.5 py-1 text-left text-[10px]">{a.atName}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 底部 · 浮动命令条 */}
+      <div className="relative mx-auto w-full max-w-4xl">
+        {/* [+] 菜单弹层 */}
+        {addMenuOpen && (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => setAddMenuOpen(false)} />
+            <div className="absolute bottom-full left-0 z-30 mb-2 w-56 space-y-1 rounded-xl border border-border bg-card p-1.5 shadow-xl">
+              <button
+                onClick={() => {
+                  fileRef.current?.click();
+                  setAddMenuOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-secondary"
+              >
+                <Upload className="size-4 text-primary" />
+                <span>
+                  上传图片
+                  <span className="block text-[10px] text-muted-foreground">
+                    {mode === "image" ? "作改图/编辑底图" : "作首尾帧/参考"}
+                  </span>
+                </span>
+              </button>
+              <button
+                onClick={() => {
+                  setImportOpen(true);
+                  setAddMenuOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-secondary"
+                disabled={assetPrompts.length === 0}
+              >
+                <FileDown className="size-4 text-primary" />
+                <span>
+                  从提示词生成器带入
+                  <span className="block text-[10px] text-muted-foreground">按类型/集数（{assetPrompts.length}）</span>
+                </span>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* 带入面板 */}
+        {importOpen && (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => setImportOpen(false)} />
+            <div className="absolute bottom-full left-0 z-30 mb-2 w-72 space-y-1.5 rounded-xl border border-border bg-card p-2 shadow-xl">
+              <div className="flex items-center gap-1">
+                <button onClick={() => setImportDim("type")} className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "type" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>按类型</button>
+                <button onClick={() => setImportDim("episode")} className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "episode" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>按集</button>
+                <Input value={importQuery} onChange={(e) => setImportQuery(e.target.value)} placeholder="搜名字" className="h-6 flex-1 text-[11px]" />
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
-                {shown.length === 0 ? (
-                  <p className="px-2 py-10 text-center text-xs text-muted-foreground">还没有已生成的图——右下出图即入此</p>
+              <div className="max-h-60 space-y-1.5 overflow-y-auto">
+                {importGroups.length === 0 ? (
+                  <p className="py-3 text-center text-[11px] text-muted-foreground">没有匹配的资产</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {shown.map((a) => {
-                      const isRef = refIds.includes(a.id);
-                      return (
-                        <div
-                          key={a.id}
-                          className={`group relative cursor-pointer overflow-hidden rounded-md border-2 ${
-                            selectedId === a.id ? "border-primary" : "border-transparent"
-                          }`}
-                          onClick={() => setSelectedId(a.id)}
-                          title={a.atName}
+                  importGroups.map((g) => (
+                    <div key={g.label}>
+                      <div className="px-1 text-[10px] font-medium text-muted-foreground">{g.label}（{g.items.length}）</div>
+                      {g.items.map((a) => (
+                        <button
+                          key={`${g.label}-${a.name}`}
+                          onClick={() => {
+                            setPrompt(a.promptText);
+                            if (!atName) setAtName(a.name);
+                            if ((ASSET_MODES as readonly string[]).includes(a.kind)) setKind(a.kind);
+                            setImportOpen(false);
+                          }}
+                          className="block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-secondary"
+                          title={a.promptText}
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleRef(a.id);
-                            }}
-                            title={isRef ? "移出参考" : "设为参考"}
-                            className={`absolute right-1 top-1 rounded-full p-0.5 backdrop-blur transition-colors ${
-                              isRef ? "bg-primary text-primary-foreground" : "bg-background/70 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
-                            }`}
-                          >
-                            <ImagePlus className="size-3" />
-                          </button>
-                          <div className="truncate bg-background/80 px-1 py-0.5 text-[10px]">{a.atName}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          {a.name}
+                        </button>
+                      ))}
+                    </div>
+                  ))
                 )}
               </div>
             </div>
-          )}
+          </>
+        )}
 
-          {/* 从提示词生成器带入：按 类型 / 集数 分类 + 搜索（⑨） */}
-          {assetPrompts.length > 0 && (
-            <div className="space-y-1">
-              <button
-                onClick={() => setImportOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs text-primary hover:underline"
-              >
-                <FileDown className="size-3.5" /> 从提示词生成器带入（{assetPrompts.length}）
-              </button>
-              {importOpen && (
-                <div className="space-y-1.5 rounded-lg border border-border bg-card p-1.5">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setImportDim("type")}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "type" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
-                    >
-                      按类型
-                    </button>
-                    <button
-                      onClick={() => setImportDim("episode")}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "episode" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
-                    >
-                      按集
-                    </button>
-                    <Input
-                      value={importQuery}
-                      onChange={(e) => setImportQuery(e.target.value)}
-                      placeholder="搜名字"
-                      className="h-6 flex-1 text-[11px]"
-                    />
+        {/* 设置弹层 */}
+        {settingsOpen && (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => setSettingsOpen(false)} />
+            <div className="absolute bottom-full right-0 z-30 mb-2 w-80 space-y-2.5 rounded-xl border border-border bg-card p-3 shadow-xl">
+              {/* 图片 | 视频 */}
+              <div className="grid grid-cols-2 gap-1 rounded-lg bg-secondary p-1">
+                <button onClick={() => setMode("image")} className={`flex items-center justify-center gap-1 rounded-md py-1.5 text-xs ${mode === "image" ? "bg-background shadow" : "text-muted-foreground"}`}>
+                  <ImageIcon className="size-3.5" /> 图片
+                </button>
+                <button onClick={() => setMode("video")} className={`flex items-center justify-center gap-1 rounded-md py-1.5 text-xs ${mode === "video" ? "bg-background shadow" : "text-muted-foreground"}`}>
+                  <Film className="size-3.5" /> 视频
+                </button>
+              </div>
+
+              {mode === "image" ? (
+                <>
+                  {/* 模型 + 资产类型 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select value={engine} onValueChange={(v) => { const e = v as "gpt" | "nano"; setEngine(e); setAspect((cur) => snapAspect(cur, e)); }}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>{ENGINES.map((e) => <SelectItem key={e.key} value={e.key}>{e.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Select value={kind} onValueChange={setKind}>
+                      <SelectTrigger className="h-8 text-xs" title="出图归类（人物/场景…）"><SelectValue /></SelectTrigger>
+                      <SelectContent>{[...ASSET_MODES, "静帧"].map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+                    </Select>
                   </div>
-                  <div className="max-h-52 space-y-1.5 overflow-y-auto">
-                    {importGroups.length === 0 ? (
-                      <p className="py-3 text-center text-[11px] text-muted-foreground">没有匹配的资产</p>
-                    ) : (
-                      importGroups.map((g) => (
-                        <div key={g.label}>
-                          <div className="px-1 text-[10px] font-medium text-muted-foreground">
-                            {g.label}（{g.items.length}）
-                          </div>
-                          {g.items.map((a) => (
-                            <button
-                              key={`${g.label}-${a.name}`}
-                              onClick={() => {
-                                setPrompt(a.promptText);
-                                if (!atName) setAtName(a.name);
-                                if ((ASSET_MODES as readonly string[]).includes(a.kind)) setKind(a.kind);
-                                setImportOpen(false);
-                              }}
-                              className="block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-secondary"
-                              title={a.promptText}
-                            >
-                              {a.name}
-                            </button>
-                          ))}
-                        </div>
-                      ))
-                    )}
+
+                  {/* 画幅图标行 */}
+                  <div>
+                    <div className="mb-1 text-[10px] text-muted-foreground">画幅</div>
+                    <div className="flex flex-wrap gap-1">
+                      {aspectsFor(engine).map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setAspect(r)}
+                          title={r === "auto" ? "自动" : r}
+                          className={`flex h-12 w-12 flex-col items-center justify-center gap-1 rounded-lg border text-[10px] transition-colors ${
+                            aspect === r ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <span className="flex h-4 items-center"><AspectIcon r={r} /></span>
+                          {r === "auto" ? "自动" : r}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* 清晰度 */}
+                  <div>
+                    <div className="mb-1 text-[10px] text-muted-foreground">清晰度</div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {TIERS.map((t) => (
+                        <button key={t.key} onClick={() => setTier(t.key)} className={`rounded-lg border py-1.5 text-xs ${tier === t.key ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 张数 */}
+                  <div>
+                    <div className="mb-1 text-[10px] text-muted-foreground">生成张数</div>
+                    <div className="grid grid-cols-4 gap-1">
+                      {[1, 2, 3, 4].map((n) => (
+                        <button key={n} onClick={() => setCount(n)} className={`rounded-lg border py-1.5 text-xs ${count === n ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
+                          {n === 1 ? "1x" : `x${n}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border pt-2 text-center text-[11px] text-muted-foreground">
+                    生成将约消耗 <span className="text-primary">{estCredits}</span> 积分（{count} 张 × {priceEach}）
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-xs text-muted-foreground">
+                  视频模式（Seedance 2.0）<br />Phase 3 接入中：首尾帧 / 素材参考 / 运镜 / 时长
                 </div>
               )}
             </div>
-          )}
-        </aside>
+          </>
+        )}
 
-        {/* 中 · 舞台画布 */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
-          <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-            {busy ? (
-              <div className="card-generating flex flex-col items-center gap-3 rounded-xl px-10 py-16 text-sm text-muted-foreground">
-                <Loader2 className="size-7 animate-spin text-primary" />
-                <span>
-                  出图中 <Elapsed running={busy} /> · 约 30-90 秒
-                </span>
-              </div>
-            ) : selected ? (
-              <button className="flex max-h-full max-w-full items-center justify-center" onClick={() => setLightbox(selected)} title="点击放大">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/api/assets/${selected.filePath}`} alt={selected.atName} className="max-h-full max-w-full rounded-lg object-contain" />
-              </button>
-            ) : (
-              <div className="flex flex-col items-center gap-2 text-center text-sm text-muted-foreground">
-                <Sparkles className="size-7 opacity-50" />
-                <span>在下方写提示词出图，或点左侧资产墙选一张预览</span>
-              </div>
-            )}
-          </div>
-          {selected && !busy && (
-            <div className="flex items-center gap-1.5 border-t border-border px-3 py-2 text-xs">
-              <span className="truncate font-medium" title={selected.atName}>{selected.atName}</span>
-              {selected.meta?.engine && (
-                <span className="rounded border border-border px-1 text-[10px] text-muted-foreground">
-                  {selected.meta.engine} {selected.meta.tier ?? ""}
-                </span>
-              )}
-              <Button variant="ghost" size="sm" className="ml-auto h-7" onClick={() => toggleRef(selected.id)}>
-                <ImagePlus className="size-3.5" /> {refIds.includes(selected.id) ? "已设参考" : "设为参考"}
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7" asChild>
-                <a href={`/api/assets/${selected.filePath}`} download>
-                  <Download className="size-3.5" /> 下载
-                </a>
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 text-muted-foreground hover:text-destructive" onClick={() => del(selected)}>
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* 右 · History 版本栈 */}
-        <aside className="flex w-52 shrink-0 flex-col gap-2">
-          <div className="text-xs text-muted-foreground">History · 版本栈</div>
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
-            {!selected ? (
-              <p className="px-2 py-8 text-center text-xs text-muted-foreground">选一张图看它的历次版本与提示词</p>
-            ) : (
-              <div className="space-y-1.5">
-                {history.map((h) => (
-                  <button
-                    key={h.id}
-                    onClick={() => setSelectedId(h.id)}
-                    className={`flex w-full gap-2 rounded-md border p-1 text-left transition-colors ${
-                      h.id === selectedId ? "border-primary/60 bg-primary/5" : "border-transparent hover:bg-secondary"
-                    }`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`/api/assets/${h.filePath}`} alt={h.atName} className="size-12 shrink-0 rounded object-cover" loading="lazy" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[10px] text-muted-foreground">{h.meta?.engine} {h.meta?.tier}</div>
-                      <div className="line-clamp-3 text-[11px] leading-tight">{h.meta?.prompt ?? "—"}</div>
-                    </div>
+        {/* 命令条本体 */}
+        <div className="rounded-2xl border border-border bg-card p-2 shadow-lg">
+          {/* 附带的输入图（改图/参考底图）chips */}
+          {inputAssets.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1">
+              <span className="text-[10px] text-muted-foreground">{mode === "image" ? "改图底图" : "帧/参考"}：</span>
+              {inputAssets.map((a) => (
+                <div key={a.id} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="size-9 rounded border border-primary/50 object-cover" />
+                  <button onClick={() => toggleInput(a.id)} title="移除" className="absolute -right-1 -top-1 rounded-full bg-background text-muted-foreground hover:text-destructive">
+                    <X className="size-3.5" />
                   </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </aside>
-      </div>
-
-      {/* 底部 · 命令条 */}
-      <div className="space-y-2 rounded-xl border border-border bg-card p-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as "image" | "video")}>
-            <TabsList className="h-8">
-              <TabsTrigger value="image" className="gap-1 text-xs">
-                <ImageIcon className="size-3.5" /> 图像
-              </TabsTrigger>
-              <TabsTrigger value="video" disabled className="gap-1 text-xs" title="视频模式 Phase 3 接入 Seedance">
-                <Film className="size-3.5" /> 视频
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <Select
-            value={engine}
-            onValueChange={(v) => {
-              const e = v as "gpt" | "nano";
-              setEngine(e);
-              setAspect((cur) => snapAspect(cur, e));
-            }}
-          >
-            <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {ENGINES.map((e) => <SelectItem key={e.key} value={e.key}>{e.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          <Select value={aspect} onValueChange={setAspect}>
-            <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {aspectsFor(engine).map((r) => <SelectItem key={r} value={r}>{aspectLabel(r, engine)}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          <Select value={tier} onValueChange={(v) => setTier(v as "1k" | "2k" | "4k")}>
-            <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {TIERS.map((t) => <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger className="h-8 w-20 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {ASSET_MODES.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          {refAssets.length > 0 && (
-            <div className="flex items-center gap-1 rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 text-[11px] text-primary">
-              参考 {refAssets.length}
-              <button onClick={() => setRefIds([])} title="清空参考" className="hover:text-foreground">
-                <X className="size-3" />
-              </button>
+                </div>
+              ))}
             </div>
           )}
-          {aspect === "auto" && engine === "gpt" && (
-            <span className="text-[10px] text-muted-foreground">自动＝模型按提示词选尺寸</span>
-          )}
-        </div>
 
-        <div className="flex items-end gap-2">
-          <Input
-            value={atName}
-            onChange={(e) => setAtName(e.target.value)}
-            placeholder="给这张图起名（可空）"
-            title="给生成的图起个名字（如 木兰、横刀）。右侧 History 会按名归组同一资产的历次版本；命名后也能在别处用 @这个名 引用它。留空则自动取提示词开头。"
-            className="h-9 w-36 shrink-0 text-xs"
-          />
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="写图片提示词…（@资产引用、可从左下「带入」）"
-            className="max-h-28 min-h-9 flex-1 resize-y text-sm"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) void generate();
-            }}
-          />
-          <Button className="h-9 shrink-0 gap-1.5" onClick={generate} disabled={busy || mode !== "image"}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            生成（{aspectLabel(aspect, engine)}·{tier.toUpperCase()}）
-            <Elapsed running={busy} />
-          </Button>
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadImage(f);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-9 shrink-0 rounded-full border border-border"
+              onClick={() => setAddMenuOpen((v) => !v)}
+              disabled={uploading}
+              title="上传图片 / 带入提示词"
+            >
+              {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            </Button>
+
+            <Input
+              value={atName}
+              onChange={(e) => setAtName(e.target.value)}
+              placeholder="@名"
+              title="给生成的图命名（可空）：右侧/网格按名归组，之后可 @引用。留空取提示词开头。"
+              className="h-9 w-20 shrink-0 text-xs"
+            />
+
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="您希望创作什么内容？（⌘/Ctrl+Enter 生成）"
+              className="max-h-28 min-h-9 flex-1 resize-y border-0 bg-transparent text-sm focus-visible:ring-0"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) void generate();
+              }}
+            />
+
+            {/* 模型·画幅·张数 chip（开设置） */}
+            <button
+              onClick={() => setSettingsOpen((v) => !v)}
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+              title="生成设置"
+            >
+              {mode === "image" ? (
+                <>
+                  <span>{engine === "nano" ? "nano banana" : "image2"}</span>
+                  <span className="opacity-60">·{aspect === "auto" ? "自动" : aspect}·{tier.toUpperCase()}·{count === 1 ? "1x" : `x${count}`}</span>
+                </>
+              ) : (
+                <span>视频 · Seedance</span>
+              )}
+            </button>
+
+            <Button className="size-9 shrink-0 rounded-full p-0" onClick={generate} disabled={busy || mode !== "image"} title="生成">
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+            </Button>
+          </div>
+          {busy && (
+            <div className="px-2 pt-1 text-[11px] text-muted-foreground">
+              出图中 <Elapsed running={busy} /> · 约 30-90 秒
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 放大预览 lightbox */}
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
-          onClick={() => setLightbox(null)}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/api/assets/${lightbox.filePath}`} alt={lightbox.atName} className="max-h-full max-w-full rounded-lg object-contain" />
-          <div className="absolute right-4 top-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
-            <Button variant="secondary" size="sm" asChild>
-              <a href={`/api/assets/${lightbox.filePath}`} download>
-                <Download className="size-4" /> 下载
-              </a>
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setLightbox(null)}>
-              <X className="size-4" />
-            </Button>
+      {/* 预览弹窗（点网格放大 + 操作） */}
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" onClick={() => setPreview(null)}>
+          <div className="flex max-h-full max-w-5xl flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/api/assets/${preview.filePath}`} alt={preview.atName} className="max-h-[78vh] max-w-full rounded-lg object-contain" />
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="text-sm text-white/80">{preview.atName}</span>
+              {preview.meta?.engine && <span className="rounded border border-white/20 px-1.5 text-[10px] text-white/60">{preview.meta.engine} {preview.meta.tier ?? ""}</span>}
+              <Button variant="secondary" size="sm" onClick={() => { toggleInput(preview.id); }}>
+                {inputIds.includes(preview.id) ? "移出底图" : mode === "image" ? "作改图底图" : "加为帧/参考"}
+              </Button>
+              <Button variant="secondary" size="sm" asChild>
+                <a href={`/api/assets/${preview.filePath}`} download><Download className="size-4" /> 下载</a>
+              </Button>
+              <Button variant="secondary" size="sm" className="text-destructive" onClick={() => del(preview)}>
+                <Trash2 className="size-4" /> 删除
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setPreview(null)}><X className="size-4" /></Button>
+            </div>
           </div>
         </div>
       )}
