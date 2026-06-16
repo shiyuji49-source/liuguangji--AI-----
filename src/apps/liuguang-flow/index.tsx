@@ -208,7 +208,7 @@ export function LiuguangFlowApp({
   const shown = filter === "全部" ? assets : assets.filter((a) => a.kind === filter);
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] min-h-[560px] flex-col gap-3">
+    <div className="flex h-[calc(100vh-8.5rem)] min-h-[600px] flex-col gap-3">
       {/* 顶栏 */}
       <div className="flex flex-wrap items-center gap-3">
         <Clapperboard className="size-4 text-primary" />
@@ -324,9 +324,9 @@ export function LiuguangFlowApp({
                 </span>
               </div>
             ) : selected ? (
-              <button className="relative max-h-full max-w-full" onClick={() => setLightbox(selected)} title="点击放大">
+              <button className="flex max-h-full max-w-full items-center justify-center" onClick={() => setLightbox(selected)} title="点击放大">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/api/assets/${selected.filePath}`} alt={selected.atName} className="max-h-[58vh] max-w-full rounded-lg object-contain" />
+                <img src={`/api/assets/${selected.filePath}`} alt={selected.atName} className="max-h-full max-w-full rounded-lg object-contain" />
               </button>
             ) : (
               <div className="flex flex-col items-center gap-2 text-center text-sm text-muted-foreground">
@@ -454,8 +454,9 @@ export function LiuguangFlowApp({
           <Input
             value={atName}
             onChange={(e) => setAtName(e.target.value)}
-            placeholder="@名（可空）"
-            className="h-9 w-28 shrink-0 text-xs"
+            placeholder="给这张图起名（可空）"
+            title="给生成的图起个名字（如 木兰、横刀）。右侧 History 会按名归组同一资产的历次版本；命名后也能在别处用 @这个名 引用它。留空则自动取提示词开头。"
+            className="h-9 w-36 shrink-0 text-xs"
           />
           <Textarea
             value={prompt}
