@@ -28,6 +28,18 @@ services:
       db:
         condition: service_healthy
 
+  # 一次性任务：把产物卷 /data/assets 归属非 root 运行用户（app）。
+  # 修复历史 root:root 卷 + 新卷兜底；否则出图写文件 EACCES → "服务器内部错误"。
+  chown-assets:
+    build:
+      context: .
+      target: runner
+    user: root
+    entrypoint: []
+    command: ["sh", "-c", "mkdir -p /data/assets && chown -R app:app /data/assets"]
+    volumes:
+      - assets:/data/assets
+
   app:
     build:
       context: .
@@ -51,6 +63,8 @@ services:
       db:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      chown-assets:
         condition: service_completed_successfully
 
 volumes:

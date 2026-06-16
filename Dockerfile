@@ -21,6 +21,10 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 # skill 文件运行时读取（outputFileTracingIncludes 已声明，双保险显式拷贝）
 COPY --from=builder /app/docs/鎏光智绘提示词SKILL ./docs/鎏光智绘提示词SKILL
+# 生成产物目录（挂载卷 mountpoint）：预建并归属非 root 运行用户。
+# 否则新命名卷默认 root:root，非 root 的 app 用户写图 EACCES → 路由抛无 status 异常 → "服务器内部错误"。
+# 命名卷首次挂载会从镜像该目录初始化并继承 app:app 属主。
+RUN mkdir -p /data/assets && chown -R app:app /data/assets
 USER app
 EXPOSE 3000
 ENV PORT=3000 HOSTNAME=0.0.0.0
