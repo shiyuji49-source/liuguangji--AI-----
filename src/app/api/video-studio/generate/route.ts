@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const { projectId, segmentId, resolution, generateAudio, refAssetIds } = parsed.data;
 
     const { user, project, projectRole } = await requireProjectMember(projectId);
-    if (!appsVisibleFor(projectRole).some((a) => a.key === "video-studio")) {
+    if (!appsVisibleFor(projectRole).some((a) => a.key === "liuguang-flow")) {
       throw new AuthError("无视频生成器权限", 403);
     }
 

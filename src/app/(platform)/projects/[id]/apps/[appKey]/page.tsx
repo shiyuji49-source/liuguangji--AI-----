@@ -3,8 +3,7 @@ import { requireProjectMember, AuthError } from "@/lib/auth-helpers";
 import { getApp, isAppLive, appsVisibleFor } from "@/apps/registry";
 import { PromptStudioApp } from "@/apps/prompt-studio";
 import { ScriptDoctorApp } from "@/apps/script-doctor";
-import { ImageStudioApp } from "@/apps/image-studio";
-import { VideoStudioApp } from "@/apps/video-studio";
+import { LiuguangFlowApp } from "@/apps/liuguang-flow";
 
 export default async function AppHostPage({
   params,
@@ -12,6 +11,10 @@ export default async function AppHostPage({
   params: Promise<{ id: string; appKey: string }>;
 }) {
   const { id, appKey } = await params;
+  // 旧入口（图像/视频生成器）已合并为鎏光flow，重定向兼容旧链接/书签
+  if (appKey === "image-studio" || appKey === "video-studio") {
+    redirect(`/projects/${id}/apps/liuguang-flow`);
+  }
   const app = getApp(appKey);
   if (!app) notFound();
 
@@ -46,10 +49,8 @@ export default async function AppHostPage({
       return <ScriptDoctorApp {...common} />;
     case "prompt-studio":
       return <PromptStudioApp {...common} />;
-    case "image-studio":
-      return <ImageStudioApp {...common} />;
-    case "video-studio":
-      return <VideoStudioApp {...common} />;
+    case "liuguang-flow":
+      return <LiuguangFlowApp {...common} />;
     default:
       notFound();
   }

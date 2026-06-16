@@ -4,7 +4,7 @@ import type { ProjectRole } from "@/lib/db/schema";
  * 应用注册表（产品铁律 1：平台=极薄外壳+彼此独立的应用）。
  * 新增应用 = src/apps/ 新目录 + 在此注册；应用之间禁止互相 import 业务代码。
  */
-export type AppKey = "script-doctor" | "prompt-studio" | "image-studio" | "video-studio";
+export type AppKey = "script-doctor" | "prompt-studio" | "liuguang-flow";
 export type Phase = "P0" | "P1" | "P2";
 
 export const CURRENT_PHASE: Phase = "P2"; // P2 上线：图像 + 视频生成器全部点亮
@@ -43,24 +43,14 @@ export const APPS: AppDef[] = [
     billingActions: ["llm"],
   },
   {
-    key: "image-studio",
-    name: "图像生成器",
-    icon: "Image",
-    description: "image2 生成 / 编辑溶图，产出入项目资产墙",
-    phase: "P1",
-    rolesVisible: ["director", "artist", "storyboard"],
-    route: (id) => `/projects/${id}/apps/image-studio`,
-    billingActions: ["image"],
-  },
-  {
-    key: "video-studio",
-    name: "视频生成器",
+    key: "liuguang-flow",
+    name: "鎏光flow",
     icon: "Clapperboard",
-    description: "Seedance 2.0 多图参考视频生成",
+    description: "图像+视频统一生产工作台：image2 / nano banana pro 出图，Seedance 2.0 出片",
     phase: "P2",
-    rolesVisible: ["director", "storyboard"],
-    route: (id) => `/projects/${id}/apps/video-studio`,
-    billingActions: ["video"],
+    rolesVisible: ["director", "artist", "storyboard"],
+    route: (id) => `/projects/${id}/apps/liuguang-flow`,
+    billingActions: ["image", "video"],
   },
 ];
 
