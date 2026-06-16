@@ -97,6 +97,9 @@ type Asset = {
   meta: { engine?: string; tier?: string; prompt?: string } | null;
 };
 
+// 从提示词生成器带入的资产提示词（按类型/集数分类）
+type ImportItem = { name: string; promptText: string; kind: string; episodes: number[] };
+
 export function LiuguangFlowApp({
   projectId,
   projectName,
@@ -132,8 +135,10 @@ export function LiuguangFlowApp({
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [assetPrompts, setAssetPrompts] = useState<{ name: string; promptText: string }[]>([]);
+  const [assetPrompts, setAssetPrompts] = useState<ImportItem[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [importDim, setImportDim] = useState<"type" | "episode">("type");
+  const [importQuery, setImportQuery] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/image-studio/assets?projectId=${projectId}`);
@@ -143,9 +148,17 @@ export function LiuguangFlowApp({
   const loadAssetPrompts = useCallback(async () => {
     const res = await fetch(`/api/prompt-studio/items?projectId=${projectId}&workspace=资产`);
     if (!res.ok) return;
-    const items: { name: string; promptText: string | null; state: string }[] = (await res.json()).items;
+    const items: {
+      name: string;
+      promptText: string | null;
+      state: string;
+      kind: string;
+      episodes: number[] | null;
+    }[] = (await res.json()).items;
     setAssetPrompts(
-      items.filter((i) => i.state === "done" && i.promptText).map((i) => ({ name: i.name, promptText: i.promptText! }))
+      items
+        .filter((i) => i.state === "done" && i.promptText)
+        .map((i) => ({ name: i.name, promptText: i.promptText!, kind: i.kind, episodes: i.episodes ?? [] }))
     );
   }, [projectId]);
 
@@ -233,6 +246,24 @@ export function LiuguangFlowApp({
   const uploadedRefs = assets.filter((a) => a.kind === "参考"); // 上传的参考
   const kinds = ["全部", ...ASSET_MODES, "静帧", "视频"];
   const shown = filter === "全部" ? wallAssets : wallAssets.filter((a) => a.kind === filter);
+
+  // 「从提示词生成器带入」分组：按类型(人物/服装/道具/场景/群演) 或 按集
+  const importFiltered = assetPrompts.filter((p) => !importQuery.trim() || p.name.includes(importQuery.trim()));
+  const importGroups: { label: string; items: ImportItem[] }[] =
+    importDim === "type"
+      ? [...ASSET_MODES]
+          .map((k) => ({ label: k, items: importFiltered.filter((p) => p.kind === k) }))
+          .filter((g) => g.items.length > 0)
+      : (() => {
+          const eps = [...new Set(importFiltered.flatMap((p) => p.episodes))].sort((a, b) => a - b);
+          const groups = eps.map((e) => ({
+            label: e === 0 ? "前置资料" : `第 ${e} 集`,
+            items: importFiltered.filter((p) => p.episodes.includes(e)),
+          }));
+          const noEp = importFiltered.filter((p) => p.episodes.length === 0);
+          if (noEp.length) groups.push({ label: "未标集", items: noEp });
+          return groups;
+        })();
 
   return (
     <div className="flex h-[calc(100vh-8.5rem)] min-h-[600px] flex-col gap-3">
@@ -388,7 +419,7 @@ export function LiuguangFlowApp({
             </div>
           )}
 
-          {/* 从提示词生成器带入（Phase 1 基础版；Phase 2 做集/角色/场景分类） */}
+          {/* 从提示词生成器带入：按 类型 / 集数 分类 + 搜索（⑨） */}
           {assetPrompts.length > 0 && (
             <div className="space-y-1">
               <button
@@ -398,21 +429,55 @@ export function LiuguangFlowApp({
                 <FileDown className="size-3.5" /> 从提示词生成器带入（{assetPrompts.length}）
               </button>
               {importOpen && (
-                <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
-                  {assetPrompts.map((a) => (
+                <div className="space-y-1.5 rounded-lg border border-border bg-card p-1.5">
+                  <div className="flex items-center gap-1">
                     <button
-                      key={a.name}
-                      onClick={() => {
-                        setPrompt(a.promptText);
-                        if (!atName) setAtName(a.name);
-                        setImportOpen(false);
-                      }}
-                      className="block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-secondary"
-                      title={a.promptText}
+                      onClick={() => setImportDim("type")}
+                      className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "type" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
                     >
-                      {a.name}
+                      按类型
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setImportDim("episode")}
+                      className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "episode" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+                    >
+                      按集
+                    </button>
+                    <Input
+                      value={importQuery}
+                      onChange={(e) => setImportQuery(e.target.value)}
+                      placeholder="搜名字"
+                      className="h-6 flex-1 text-[11px]"
+                    />
+                  </div>
+                  <div className="max-h-52 space-y-1.5 overflow-y-auto">
+                    {importGroups.length === 0 ? (
+                      <p className="py-3 text-center text-[11px] text-muted-foreground">没有匹配的资产</p>
+                    ) : (
+                      importGroups.map((g) => (
+                        <div key={g.label}>
+                          <div className="px-1 text-[10px] font-medium text-muted-foreground">
+                            {g.label}（{g.items.length}）
+                          </div>
+                          {g.items.map((a) => (
+                            <button
+                              key={`${g.label}-${a.name}`}
+                              onClick={() => {
+                                setPrompt(a.promptText);
+                                if (!atName) setAtName(a.name);
+                                if ((ASSET_MODES as readonly string[]).includes(a.kind)) setKind(a.kind);
+                                setImportOpen(false);
+                              }}
+                              className="block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-secondary"
+                              title={a.promptText}
+                            >
+                              {a.name}
+                            </button>
+                          ))}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
             </div>
