@@ -9,6 +9,7 @@ import {
   X,
   Trash2,
   ArrowUp,
+  ArrowLeft,
   Search,
   Upload,
   FileDown,
@@ -152,6 +153,8 @@ export function LiuguangFlowApp({
   const [query, setQuery] = useState("");
   const [inputIds, setInputIds] = useState<string[]>([]); // 本次喂给模型的图（改图/参考底图）
   const [preview, setPreview] = useState<Asset | null>(null);
+  const [editPrompt, setEditPrompt] = useState(""); // 预览弹窗里的改图指令
+  const [editing, setEditing] = useState(false);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -268,6 +271,40 @@ export function LiuguangFlowApp({
     if (preview?.id === a.id) setPreview(null);
   }
 
+  // 预览弹窗里改图：以当前图为底图，按指令重生成；保留同名 → 归入历史版本
+  async function editImage() {
+    if (!preview || !editPrompt.trim()) return;
+    const editKind = preview.kind === "参考" || preview.kind === "视频" ? "人物" : preview.kind;
+    setEditing(true);
+    try {
+      const res = await fetch("/api/image-studio/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          engine,
+          prompt: editPrompt.trim(),
+          tier,
+          kind: editKind,
+          aspectRatio: aspect,
+          atName: preview.atName,
+          refAssetIds: [preview.id],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "改图失败");
+        return;
+      }
+      toast.success(`改图完成（消耗 ${data.credits} 积分）`);
+      setEditPrompt("");
+      await load();
+      if (data.assets?.[0]) setPreview(data.assets[0]);
+    } finally {
+      setEditing(false);
+    }
+  }
+
   // 带入分组
   const importFiltered = assetPrompts.filter((p) => !importQuery.trim() || p.name.includes(importQuery.trim()));
   const importGroups: { label: string; items: ImportItem[] }[] =
@@ -340,7 +377,10 @@ export function LiuguangFlowApp({
               {shown.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => setPreview(a)}
+                  onClick={() => {
+                    setPreview(a);
+                    setEditPrompt("");
+                  }}
                   className="group relative overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
                   title={a.atName}
                 >
@@ -613,29 +653,80 @@ export function LiuguangFlowApp({
         </div>
       </div>
 
-      {/* 预览弹窗（点网格放大 + 操作） */}
-      {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" onClick={() => setPreview(null)}>
-          <div className="flex max-h-full max-w-5xl flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/api/assets/${preview.filePath}`} alt={preview.atName} className="max-h-[78vh] max-w-full rounded-lg object-contain" />
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <span className="text-sm text-white/80">{preview.atName}</span>
-              {preview.meta?.engine && <span className="rounded border border-white/20 px-1.5 text-[10px] text-white/60">{preview.meta.engine} {preview.meta.tier ?? ""}</span>}
-              <Button variant="secondary" size="sm" onClick={() => { toggleInput(preview.id); }}>
-                {inputIds.includes(preview.id) ? "移出底图" : mode === "image" ? "作改图底图" : "加为帧/参考"}
-              </Button>
-              <Button variant="secondary" size="sm" asChild>
-                <a href={`/api/assets/${preview.filePath}`} download><Download className="size-4" /> 下载</a>
-              </Button>
-              <Button variant="secondary" size="sm" className="text-destructive" onClick={() => del(preview)}>
-                <Trash2 className="size-4" /> 删除
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setPreview(null)}><X className="size-4" /></Button>
+      {/* 预览 / 改图弹窗（Flow 式编辑视图） */}
+      {preview &&
+        (() => {
+          const isVideo = preview.kind === "视频";
+          const versions = assets.filter((a) => a.atName === preview.atName);
+          return (
+            <div className="fixed inset-0 z-50 flex flex-col bg-black/95">
+              {/* 顶栏 */}
+              <div className="flex items-center gap-3 px-4 py-3 text-white">
+                <button onClick={() => setPreview(null)} className="opacity-80 hover:opacity-100"><ArrowLeft className="size-5" /></button>
+                <span className="truncate text-sm">{preview.atName}</span>
+                {preview.meta?.engine && (
+                  <span className="rounded border border-white/20 px-1.5 text-[10px] text-white/60">{preview.meta.engine} {preview.meta.tier ?? ""}</span>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                  <button onClick={() => toggleInput(preview.id)} className="rounded-full px-3 py-1.5 text-xs text-white/80 hover:bg-white/10" title="作改图/参考底图">
+                    {inputIds.includes(preview.id) ? "移出底图" : "作底图"}
+                  </button>
+                  <a href={`/api/assets/${preview.filePath}`} download className="rounded-full p-2 text-white/80 hover:bg-white/10" title="下载"><Download className="size-4" /></a>
+                  <button onClick={() => del(preview)} className="rounded-full p-2 text-white/80 hover:bg-white/10 hover:text-destructive" title="删除"><Trash2 className="size-4" /></button>
+                  <Button size="sm" variant="secondary" onClick={() => setPreview(null)}>完成</Button>
+                </div>
+              </div>
+              {/* 中部：大图 + 右侧历史版本 */}
+              <div className="flex min-h-0 flex-1 gap-3 px-4 pb-3">
+                <div className="flex min-w-0 flex-1 items-center justify-center">
+                  {isVideo ? (
+                    <video src={`/api/assets/${preview.filePath}`} controls className="max-h-full max-w-full rounded-lg" />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={`/api/assets/${preview.filePath}`} alt={preview.atName} className="max-h-full max-w-full rounded-lg object-contain" />
+                  )}
+                </div>
+                {versions.length > 1 && (
+                  <aside className="w-48 shrink-0 space-y-1.5 overflow-y-auto">
+                    <div className="text-[11px] text-white/50">历史版本（{versions.length}）</div>
+                    {versions.map((v) => (
+                      <button
+                        key={v.id}
+                        onClick={() => setPreview(v)}
+                        className={`block w-full overflow-hidden rounded-lg border ${v.id === preview.id ? "border-primary" : "border-white/10 hover:border-white/30"}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/assets/${v.filePath}`} alt={v.atName} className="aspect-video w-full object-cover" loading="lazy" />
+                        {v.meta?.prompt && <div className="line-clamp-2 px-1.5 py-1 text-left text-[10px] text-white/60">{v.meta.prompt}</div>}
+                      </button>
+                    ))}
+                  </aside>
+                )}
+              </div>
+              {/* 底部：改图框（视频暂不支持改图） */}
+              {!isVideo && (
+                <div className="mx-auto mb-4 w-full max-w-2xl px-4">
+                  <div className="flex items-end gap-2 rounded-2xl border border-white/15 bg-neutral-900 p-2">
+                    <Textarea
+                      value={editPrompt}
+                      onChange={(e) => setEditPrompt(e.target.value)}
+                      placeholder="您想要更改什么？（基于当前图改图，⌘/Ctrl+Enter）"
+                      className="max-h-24 min-h-9 flex-1 resize-y border-0 bg-transparent text-sm text-white focus-visible:ring-0"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && editPrompt.trim() && !editing) void editImage();
+                      }}
+                    />
+                    <span className="shrink-0 rounded-full border border-white/15 px-2.5 py-1 text-[11px] text-white/70">{engine === "nano" ? "nano banana" : "image2"}</span>
+                    <Button className="size-9 shrink-0 rounded-full p-0" onClick={editImage} disabled={editing || !editPrompt.trim()} title="改图">
+                      {editing ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+                    </Button>
+                  </div>
+                  {editing && <div className="px-2 pt-1 text-[11px] text-white/50">改图中 <Elapsed running={editing} /> · 约 30-90 秒</div>}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 }
