@@ -21,6 +21,7 @@ export async function POST(req: Request) {
         kind: z.enum(["人物", "服装", "道具", "场景", "群演", "静帧", "视频"]),
         atName: z.string().trim().max(80).optional(),
         aspectRatio: z.string().max(10).optional(),
+        quality: z.enum(["low", "medium", "high"]).optional(),
         n: z.number().int().min(1).max(4).optional(),
         refAssetIds: z.array(z.string().uuid()).max(8).optional(),
       })
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
         prompt,
         tier: tier as ImageTier,
         aspectRatio,
+        quality: parsed.data.quality,
         refImages: refImages.length ? refImages : undefined,
         n: count,
       });

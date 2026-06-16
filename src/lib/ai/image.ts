@@ -15,11 +15,13 @@ export type ImageEngine = "gpt" | "nano";
 export type ImageTier = "1k" | "2k" | "4k";
 export type RefImage = { base64: string; mime: string };
 
+export type ImageQuality = "low" | "medium" | "high";
 export type GenImageInput = {
   engine: ImageEngine;
   prompt: string;
   tier: ImageTier;
   aspectRatio?: string; // "1:1" | "16:9" | "9:16" ...（默认按项目画幅）
+  quality?: ImageQuality; // gpt-image-2 画质档（低/中/高）；nano 无此参数
   refImages?: RefImage[];
   n?: number;
 };
@@ -56,12 +58,11 @@ function gptSize(tier: ImageTier, aspect?: string): string {
   const o = aspectOrient(aspect); // 未列比例按朝向就近
   return o > 0 ? t["16:9"] : o < 0 ? t["9:16"] : t["1:1"];
 }
-// 质量固定中档：兼顾画质/速度/成本，避开 high 的超长耗时（实测 1024/high≈210s 易触发网关超时）。
-const GPT_QUALITY = "medium";
+// 画质默认中档（兼顾画质/速度/成本）；high 画质最好但慢很多（实测 1024/high≈210s），由调用方按需选。
 
 async function generateGpt(input: GenImageInput): Promise<GenImageResult> {
   const n = Math.max(1, Math.trunc(input.n ?? 1));
-  const quality = GPT_QUALITY;
+  const quality = input.quality ?? "medium";
   const size = gptSize(input.tier, input.aspectRatio);
   let res: Response;
 

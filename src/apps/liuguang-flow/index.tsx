@@ -143,6 +143,7 @@ export function LiuguangFlowApp({
   const [engine, setEngine] = useState<"gpt" | "nano">("gpt");
   const [aspect, setAspect] = useState(() => snapAspect(projectAspect || "9:16", "gpt"));
   const [tier, setTier] = useState<"1k" | "2k" | "4k">("2k");
+  const [quality, setQuality] = useState<"low" | "medium" | "high">("medium"); // image2 画质档
   const [kind, setKind] = useState<string>("人物");
   const [count, setCount] = useState(1);
   const [prompt, setPrompt] = useState("");
@@ -228,6 +229,7 @@ export function LiuguangFlowApp({
           tier,
           kind,
           aspectRatio: aspect,
+          quality: engine === "gpt" ? quality : undefined,
           n: count,
           atName: atName.trim() || undefined,
           refAssetIds: inputIds.length ? inputIds : undefined, // 改图/参考底图
@@ -305,6 +307,7 @@ export function LiuguangFlowApp({
           tier,
           kind: editKind,
           aspectRatio: aspect,
+          quality: engine === "gpt" ? quality : undefined,
           atName: preview.atName,
           refAssetIds: [preview.id],
         }),
@@ -609,6 +612,30 @@ export function LiuguangFlowApp({
                       ))}
                     </div>
                   </div>
+
+                  {/* 画质（仅 image2/gpt 有低中高） */}
+                  {engine === "gpt" && (
+                    <div>
+                      <div className="mb-1 text-[10px] text-muted-foreground">
+                        画质 <span className="opacity-60">· 高更精细但慢很多(~3分钟)</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {([
+                          ["low", "低"],
+                          ["medium", "中"],
+                          ["high", "高"],
+                        ] as const).map(([q, label]) => (
+                          <button
+                            key={q}
+                            onClick={() => setQuality(q)}
+                            className={`rounded-lg border py-1.5 text-xs ${quality === q ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* 张数 */}
                   <div>
