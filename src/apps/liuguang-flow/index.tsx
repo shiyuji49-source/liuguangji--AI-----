@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Clapperboard,
   Image as ImageIcon,
@@ -12,6 +12,7 @@ import {
   ImagePlus,
   FileDown,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -127,6 +128,9 @@ export function LiuguangFlowApp({
   const [filter, setFilter] = useState("全部");
   const [refIds, setRefIds] = useState<string[]>([]);
   const [lightbox, setLightbox] = useState<Asset | null>(null);
+  const [leftTab, setLeftTab] = useState<"ref" | "wall">("wall");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [assetPrompts, setAssetPrompts] = useState<{ name: string; promptText: string }[]>([]);
   const [importOpen, setImportOpen] = useState(false);
@@ -197,15 +201,38 @@ export function LiuguangFlowApp({
   }
 
   async function del(a: Asset) {
-    if (!confirm("从资产墙删除这张图？")) return;
+    if (!confirm("删除这张图？")) return;
     await fetch(`/api/image-studio/assets/${a.id}`, { method: "DELETE" });
     setAssets((arr) => arr.filter((x) => x.id !== a.id));
     if (selectedId === a.id) setSelectedId(null);
     setRefIds((r) => r.filter((x) => x !== a.id));
   }
 
+  // ➕ 上传新参考：外部图（定妆照/实景/风格板）→ 入库 kind=参考，自动加入本次参考槽
+  async function uploadRef(file: File) {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("projectId", projectId);
+      fd.append("file", file);
+      const res = await fetch("/api/image-studio/assets", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "上传失败");
+        return;
+      }
+      setAssets((arr) => [data.asset, ...arr]);
+      setRefIds((r) => (r.includes(data.asset.id) ? r : r.length >= 8 ? r : [...r, data.asset.id]));
+      toast.success("参考图已上传并加入本次参考");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const wallAssets = assets.filter((a) => a.kind !== "参考"); // 已生成的资产图
+  const uploadedRefs = assets.filter((a) => a.kind === "参考"); // 上传的参考
   const kinds = ["全部", ...ASSET_MODES, "静帧", "视频"];
-  const shown = filter === "全部" ? assets : assets.filter((a) => a.kind === filter);
+  const shown = filter === "全部" ? wallAssets : wallAssets.filter((a) => a.kind === filter);
 
   return (
     <div className="flex h-[calc(100vh-8.5rem)] min-h-[600px] flex-col gap-3">
@@ -225,62 +252,141 @@ export function LiuguangFlowApp({
 
       {/* 中部三区 */}
       <div className="flex min-h-0 flex-1 gap-3">
-        {/* 左 · 资产墙 */}
-        <aside className="flex w-60 shrink-0 flex-col gap-2">
-          <div className="flex flex-wrap gap-1">
-            {kinds.map((k) => (
-              <button
-                key={k}
-                onClick={() => setFilter(k)}
-                className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                  filter === k
-                    ? "border-primary/60 bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {k}
-                {k !== "全部" && <span className="ml-1 opacity-60">{assets.filter((a) => a.kind === k).length}</span>}
-              </button>
-            ))}
-          </div>
+        {/* 左 · 参考图 / 已生成的资产图（两来源严格分离） */}
+        <aside className="flex w-64 shrink-0 flex-col gap-2">
+          <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as "ref" | "wall")}>
+            <TabsList className="grid h-8 w-full grid-cols-2">
+              <TabsTrigger value="ref" className="text-xs">
+                参考图{refIds.length ? `·${refIds.length}` : ""}
+              </TabsTrigger>
+              <TabsTrigger value="wall" className="text-xs">已生成的资产图</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
-            {shown.length === 0 ? (
-              <p className="px-2 py-10 text-center text-xs text-muted-foreground">资产墙为空——右下出图即入墙</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5">
-                {shown.map((a) => {
-                  const isRef = refIds.includes(a.id);
-                  return (
-                    <div
-                      key={a.id}
-                      className={`group relative cursor-pointer overflow-hidden rounded-md border-2 ${
-                        selectedId === a.id ? "border-primary" : "border-transparent"
-                      }`}
-                      onClick={() => setSelectedId(a.id)}
-                      title={a.atName}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleRef(a.id);
-                        }}
-                        title={isRef ? "移出参考" : "设为参考"}
-                        className={`absolute right-1 top-1 rounded-full p-0.5 backdrop-blur transition-colors ${
-                          isRef ? "bg-primary text-primary-foreground" : "bg-background/70 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
-                        }`}
-                      >
-                        <ImagePlus className="size-3" />
-                      </button>
-                      <div className="truncate bg-background/80 px-1 py-0.5 text-[10px]">{a.atName}</div>
-                    </div>
-                  );
-                })}
+          {leftTab === "ref" ? (
+            /* Tab A · 参考图（本次生成喂给模型的输入） */
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadRef(f);
+                  e.target.value = "";
+                }}
+              />
+              <Button variant="outline" size="sm" className="h-8" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                上传新参考
+              </Button>
+              <p className="text-[10px] leading-tight text-muted-foreground">
+                上传外部图（定妆照/实景/风格板）；或到「已生成的资产图」把图设为参考。⚠️Seedance 不支持真人脸参考。
+              </p>
+
+              {refAssets.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center text-[11px] text-muted-foreground">
+                    本次参考 {refAssets.length}/8
+                    <button onClick={() => setRefIds([])} className="ml-auto hover:text-foreground" title="清空">清空</button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {refAssets.map((a) => (
+                      <div key={a.id} className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full rounded border border-primary/50 object-cover" />
+                        <button onClick={() => toggleRef(a.id)} title="移除" className="absolute -right-1 -top-1 rounded-full bg-background text-muted-foreground hover:text-destructive">
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="text-[11px] text-muted-foreground">已上传的参考库</div>
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
+                {uploadedRefs.length === 0 ? (
+                  <p className="px-2 py-8 text-center text-xs text-muted-foreground">还没上传参考图，点上方「上传新参考」</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {uploadedRefs.map((a) => {
+                      const isRef = refIds.includes(a.id);
+                      return (
+                        <button
+                          key={a.id}
+                          onClick={() => toggleRef(a.id)}
+                          title={`${a.atName}${isRef ? "（已选为参考）" : ""}`}
+                          className={`relative overflow-hidden rounded border-2 ${isRef ? "border-primary" : "border-transparent hover:border-border"}`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            /* Tab B · 已生成的资产图（项目产物网格） */
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex flex-wrap gap-1">
+                {kinds.map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => setFilter(k)}
+                    className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                      filter === k
+                        ? "border-primary/60 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {k}
+                    {k !== "全部" && <span className="ml-1 opacity-60">{wallAssets.filter((a) => a.kind === k).length}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-card p-1.5">
+                {shown.length === 0 ? (
+                  <p className="px-2 py-10 text-center text-xs text-muted-foreground">还没有已生成的图——右下出图即入此</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {shown.map((a) => {
+                      const isRef = refIds.includes(a.id);
+                      return (
+                        <div
+                          key={a.id}
+                          className={`group relative cursor-pointer overflow-hidden rounded-md border-2 ${
+                            selectedId === a.id ? "border-primary" : "border-transparent"
+                          }`}
+                          onClick={() => setSelectedId(a.id)}
+                          title={a.atName}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleRef(a.id);
+                            }}
+                            title={isRef ? "移出参考" : "设为参考"}
+                            className={`absolute right-1 top-1 rounded-full p-0.5 backdrop-blur transition-colors ${
+                              isRef ? "bg-primary text-primary-foreground" : "bg-background/70 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
+                            }`}
+                          >
+                            <ImagePlus className="size-3" />
+                          </button>
+                          <div className="truncate bg-background/80 px-1 py-0.5 text-[10px]">{a.atName}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 从提示词生成器带入（Phase 1 基础版；Phase 2 做集/角色/场景分类） */}
           {assetPrompts.length > 0 && (

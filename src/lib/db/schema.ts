@@ -282,7 +282,7 @@ export const videoSegments = pgTable(
 );
 
 // ===== P1 资产墙（按 §5 一次建全）=====
-export type AssetKind = "人物" | "服装" | "道具" | "场景" | "群演" | "静帧" | "视频";
+export type AssetKind = "人物" | "服装" | "道具" | "场景" | "群演" | "静帧" | "视频" | "参考";
 
 export const assets = pgTable(
   "assets",
