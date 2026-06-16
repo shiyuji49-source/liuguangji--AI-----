@@ -91,6 +91,10 @@ const IMG_PRICE: Record<"gpt" | "nano", Record<"1k" | "2k" | "4k", number>> = {
   gpt: { "1k": 12, "2k": 60, "4k": 230 },
   nano: { "1k": 150, "2k": 150, "4k": 260 },
 };
+// 视频运镜词（Seedance 无结构化相机，写进提示词由模型解释）
+const CAMERA_MOVES = ["推近", "拉远", "横移", "摇镜", "升降", "环绕", "跟随", "手持", "固定机位"];
+// 视频点数粗估（约 积分/秒，实际按 usage 计费）
+const VIDEO_RATE: Record<"480p" | "720p" | "1080p", number> = { "480p": 70, "720p": 110, "1080p": 160 };
 
 const CATEGORIES = ["全部", "图片", "视频", "角色", "场景", "上传的内容"] as const;
 function inCategory(a: Asset, cat: string): boolean {
@@ -146,6 +150,13 @@ export function LiuguangFlowApp({
   const [quality, setQuality] = useState<"low" | "medium" | "high">("medium"); // image2 画质档
   const [kind, setKind] = useState<string>("人物");
   const [count, setCount] = useState(1);
+  // 视频模式（Seedance 2.0）
+  const [videoSub, setVideoSub] = useState<"frames" | "ingredients">("ingredients"); // 帧 / 素材
+  const [videoRatio, setVideoRatio] = useState(() => (projectAspect === "16:9" ? "16:9" : "9:16"));
+  const [videoRes, setVideoRes] = useState<"480p" | "720p" | "1080p">("720p");
+  const [videoDur, setVideoDur] = useState(5);
+  const [videoAudio, setVideoAudio] = useState(true);
+  const [videoBusy, setVideoBusy] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [atName, setAtName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -289,6 +300,72 @@ export function LiuguangFlowApp({
     setInputIds((r) => r.filter((x) => !ids.includes(x)));
     setSelectedIds([]);
     toast.success(`已删除 ${ids.length} 张`);
+  }
+
+  // 视频生成（Seedance 2.0，异步）：提交 → 轮询 → 出片入媒体库
+  function pollVideo(taskId: string) {
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/video-studio/tasks/${taskId}`);
+        const d = await r.json();
+        if (d.status === "succeeded") {
+          toast.success(`出片完成（消耗 ${d.credits} 积分）`);
+          setVideoBusy(false);
+          await load();
+          if (d.asset) setPreview(d.asset);
+          return;
+        }
+        if (d.status === "failed") {
+          toast.error(`出片失败：${d.error ?? ""}`);
+          setVideoBusy(false);
+          return;
+        }
+        setTimeout(tick, 6000); // running → 继续轮询
+      } catch {
+        setTimeout(tick, 8000);
+      }
+    };
+    setTimeout(tick, 6000);
+  }
+  async function generateVideo() {
+    if (!prompt.trim()) {
+      toast.error("先写视频提示词");
+      return;
+    }
+    setVideoBusy(true);
+    setSettingsOpen(false);
+    try {
+      // 参考图按 帧/素材 定角色：帧=首/尾帧(≤2)，素材=参考图(≤9)
+      const refs =
+        videoSub === "frames"
+          ? inputIds.slice(0, 2).map((id, i) => ({ assetId: id, role: i === 0 ? "first_frame" : "last_frame" }))
+          : inputIds.slice(0, 9).map((id) => ({ assetId: id, role: "reference_image" }));
+      const res = await fetch("/api/video-studio/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          prompt: prompt.trim(),
+          durationSec: videoDur,
+          ratio: videoRatio,
+          resolution: videoRes,
+          generateAudio: videoAudio,
+          atName: atName.trim() || undefined,
+          refs: refs.length ? refs : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "提交失败");
+        setVideoBusy(false);
+        return;
+      }
+      toast.success("已提交，出片约 3-5 分钟，完成后自动入媒体库");
+      pollVideo(data.taskId);
+    } catch {
+      toast.error("提交失败");
+      setVideoBusy(false);
+    }
   }
 
   // 预览弹窗里改图：以当前图为底图，按指令重生成；保留同名 → 归入历史版本
@@ -654,9 +731,70 @@ export function LiuguangFlowApp({
                   </div>
                 </>
               ) : (
-                <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-xs text-muted-foreground">
-                  视频模式（Seedance 2.0）<br />Phase 3 接入中：首尾帧 / 素材参考 / 运镜 / 时长
-                </div>
+                <>
+                  <div className="text-[10px] text-muted-foreground">模型 · Seedance 2.0（出片约 3-5 分钟，较贵）</div>
+                  {/* 帧 / 素材 */}
+                  <div className="grid grid-cols-2 gap-1">
+                    <button onClick={() => setVideoSub("frames")} className={`rounded-lg border py-1.5 text-xs ${videoSub === "frames" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`} title="用首/尾帧图约束镜头两端">
+                      帧（首/尾帧）
+                    </button>
+                    <button onClick={() => setVideoSub("ingredients")} className={`rounded-lg border py-1.5 text-xs ${videoSub === "ingredients" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`} title="用参考图锁角色/物体一致性">
+                      素材（参考图）
+                    </button>
+                  </div>
+                  {/* 画幅 + 清晰度 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="mb-1 text-[10px] text-muted-foreground">画幅</div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {["9:16", "16:9"].map((r) => (
+                          <button key={r} onClick={() => setVideoRatio(r)} className={`rounded-lg border py-1.5 text-xs ${videoRatio === r ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>{r}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-[10px] text-muted-foreground">清晰度</div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(["480p", "720p", "1080p"] as const).map((r) => (
+                          <button key={r} onClick={() => setVideoRes(r)} className={`rounded-lg border py-1.5 text-[11px] ${videoRes === r ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>{r}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {/* 时长 + 配音 */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <div className="mb-1 text-[10px] text-muted-foreground">时长</div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[5, 10, 15].map((d) => (
+                          <button key={d} onClick={() => setVideoDur(d)} className={`rounded-lg border py-1.5 text-xs ${videoDur === d ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>{d}s</button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-1.5 self-end pb-1.5 text-xs text-muted-foreground">
+                      <input type="checkbox" checked={videoAudio} onChange={(e) => setVideoAudio(e.target.checked)} className="accent-[var(--primary)]" />
+                      配音
+                    </label>
+                  </div>
+                  {/* 运镜（写进提示词） */}
+                  <div>
+                    <div className="mb-1 text-[10px] text-muted-foreground">运镜（点击追加进提示词）</div>
+                    <div className="flex flex-wrap gap-1">
+                      {CAMERA_MOVES.map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setPrompt((p) => (p.trim() ? `${p.trim()}，镜头${m}` : `镜头${m}`))}
+                          className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary/50 hover:text-primary"
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border-t border-border pt-2 text-center text-[11px] text-muted-foreground">
+                    出片约消耗 <span className="text-primary">~{videoDur * VIDEO_RATE[videoRes]}</span> 积分（{videoDur}s·{videoRes}，实际按用量）
+                  </div>
+                </>
               )}
             </div>
           </>
@@ -717,11 +855,14 @@ export function LiuguangFlowApp({
               placeholder="您希望创作什么内容？（⌘/Ctrl+Enter 生成）"
               className="max-h-28 min-h-9 flex-1 resize-y border-0 bg-transparent text-sm focus-visible:ring-0"
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) void generate();
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  if (mode === "image" && !busy) void generate();
+                  if (mode === "video" && !videoBusy) void generateVideo();
+                }
               }}
             />
 
-            {/* 模型·画幅·张数 chip（开设置） */}
+            {/* 模型·设置 chip（开设置弹层） */}
             <button
               onClick={() => setSettingsOpen((v) => !v)}
               className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
@@ -733,17 +874,29 @@ export function LiuguangFlowApp({
                   <span className="opacity-60">·{aspect === "auto" ? "自动" : aspect}·{tier.toUpperCase()}·{count === 1 ? "1x" : `x${count}`}</span>
                 </>
               ) : (
-                <span>视频 · Seedance</span>
+                <>
+                  <span>Seedance</span>
+                  <span className="opacity-60">·{videoRatio}·{videoRes}·{videoDur}s</span>
+                </>
               )}
             </button>
 
-            <Button className="size-9 shrink-0 rounded-full p-0" onClick={generate} disabled={busy || mode !== "image"} title="生成">
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+            <Button
+              className="size-9 shrink-0 rounded-full p-0"
+              onClick={mode === "image" ? generate : generateVideo}
+              disabled={mode === "image" ? busy : videoBusy}
+              title="生成"
+            >
+              {(mode === "image" ? busy : videoBusy) ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
-          {busy && (
+          {(busy || videoBusy) && (
             <div className="px-2 pt-1 text-[11px] text-muted-foreground">
-              出图中 <Elapsed running={busy} /> · 约 30-90 秒
+              {videoBusy ? (
+                <>出片中 <Elapsed running={videoBusy} /> · 约 3-5 分钟，完成自动入库（可继续操作）</>
+              ) : (
+                <>出图中 <Elapsed running={busy} /> · 约 30-90 秒</>
+              )}
             </div>
           )}
         </div>
