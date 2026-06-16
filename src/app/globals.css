@@ -58,24 +58,25 @@
    ============================================================ */
 :root,
 .dark {
-  --background: #07080d;
-  --foreground: #eceae1;
-  --card: #10131b;
-  --card-foreground: #eceae1;
-  --popover: #131722;
-  --popover-foreground: #eceae1;
+  /* 纯黑中性底（对齐 Flow）+ 鎏光金强调 */
+  --background: #000000;
+  --foreground: #ededed;
+  --card: #111113;
+  --card-foreground: #ededed;
+  --popover: #161618;
+  --popover-foreground: #ededed;
   --primary: #d8b173;
   --primary-hover: #ecd9a8;
   --primary-foreground: #14100a;
-  --secondary: #181c27;
-  --secondary-foreground: #eceae1;
-  --muted: #161a24;
-  --muted-foreground: #97a0b4;
-  --accent: #1a1f2c;
-  --accent-foreground: #f0eee8;
+  --secondary: #1c1c1f;
+  --secondary-foreground: #ededed;
+  --muted: #161618;
+  --muted-foreground: #9a9aa3;
+  --accent: #1f1f22;
+  --accent-foreground: #f2f2f2;
   --destructive: #e16a62;
-  --border: #222837;
-  --input: #242a3a;
+  --border: #29292e;
+  --input: #2c2c31;
   --ring: #d8b173;
   --chart-1: #d8b173;
   --chart-2: #8b95ff;
@@ -83,13 +84,13 @@
   --chart-4: #5c6580;
   --chart-5: #2c3344;
   --radius: 1rem; /* 16px：大圆角卡片语言 */
-  --sidebar: #10131b;
-  --sidebar-foreground: #eceae1;
+  --sidebar: #111113;
+  --sidebar-foreground: #ededed;
   --sidebar-primary: #d8b173;
   --sidebar-primary-foreground: #14100a;
-  --sidebar-accent: #181c27;
-  --sidebar-accent-foreground: #eceae1;
-  --sidebar-border: #222837;
+  --sidebar-accent: #1c1c1f;
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: #29292e;
   --sidebar-ring: #d8b173;
   --font-sans: "MiSans", "MiSans VF", "Source Han Sans SC", "Noto Sans SC",
     "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -103,6 +104,43 @@
   --aurora-a: #8b95ff;
   --aurora-b: #4fd1c5;
   --glow-aurora: rgba(139, 149, 255, 0.16);
+  color-scheme: dark;
+}
+
+/* ---------- 白昼（浅色）主题：仅覆盖与暗色不同的 token，金/极光/字体沿用 ---------- */
+.light {
+  --background: #ffffff;
+  --foreground: #1c1a16;
+  --card: #ffffff;
+  --card-foreground: #1c1a16;
+  --popover: #ffffff;
+  --popover-foreground: #1c1a16;
+  --primary: #a87a2c;
+  --primary-hover: #8a6322;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f3f0;
+  --secondary-foreground: #1c1a16;
+  --muted: #f4f3f0;
+  --muted-foreground: #6b6a64;
+  --accent: #efeee9;
+  --accent-foreground: #1c1a16;
+  --destructive: #d4493f;
+  --border: #e5e3dc;
+  --input: #e0ded6;
+  --ring: #a87a2c;
+  --chart-4: #9aa0b4;
+  --chart-5: #c8cdd8;
+  --sidebar: #faf9f6;
+  --sidebar-foreground: #1c1a16;
+  --sidebar-primary: #a87a2c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #efeee9;
+  --sidebar-accent-foreground: #1c1a16;
+  --sidebar-border: #e5e3dc;
+  --sidebar-ring: #a87a2c;
+  --glow-gold: rgba(168, 122, 44, 0.1);
+  --glow-aurora: rgba(107, 116, 224, 0.07);
+  color-scheme: light;
 }
 
 /* ---------- 流动与呼吸 ---------- */
@@ -139,7 +177,6 @@
   }
   html {
     @apply font-sans;
-    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground;

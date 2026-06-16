@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/auth-helpers";
 import { getBalance } from "@/lib/billing/charge";
 import { PLATFORM_ROLE_LABELS } from "@/lib/labels";
 import { RailNav, RailSignOut, type RailItem } from "@/components/rail-nav";
+import { RailThemeToggle } from "@/components/rail-theme-toggle";
 import { MemberRail } from "@/components/member-rail";
 
 // 平台内页面全部依赖会话与 DB，禁止构建期预渲染
@@ -47,6 +48,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           </Link>
           <RailNav items={items} />
           <div className="mt-auto flex flex-col items-center gap-2">
+            <RailThemeToggle />
             <Link
               href="/account"
               className="flex size-10 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm text-primary transition-colors hover:border-primary/60 hover:bg-primary/20"
