@@ -260,7 +260,7 @@ export function ShotlistStage({
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-56 max-w-80">
+                  <TableCell className="min-w-64">
                     <div className="whitespace-normal break-words text-sm leading-5">{s.summary}</div>
                     {s.dialogue && (
                       <div className="mt-0.5 whitespace-normal break-words text-xs leading-4 text-muted-foreground">
