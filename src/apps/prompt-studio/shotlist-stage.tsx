@@ -225,7 +225,8 @@ export function ShotlistStage({
         </Card>
       ) : (
         <div className="rounded-lg border border-border bg-card">
-          <Table>
+          {/* min-w 让各列保持自然宽度（不被 auto-layout 挤扁裁切），容器 overflow-x-auto 横向滚动够到「运镜」之后的列 */}
+          <Table className="min-w-[960px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">镜号</TableHead>
@@ -259,7 +260,7 @@ export function ShotlistStage({
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-64 max-w-96">
+                  <TableCell className="min-w-56 max-w-80">
                     <div className="whitespace-normal break-words text-sm leading-5">{s.summary}</div>
                     {s.dialogue && (
                       <div className="mt-0.5 whitespace-normal break-words text-xs leading-4 text-muted-foreground">

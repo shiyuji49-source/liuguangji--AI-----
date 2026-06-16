@@ -21,9 +21,16 @@ type Episode = { episodeNo: number; title: string; chars: number };
  * 项目级剧本区：剧本是项目资源，建项目后即可在这里上传一次，贯穿全程。
  * 导演可上传/删除；成员可查看。剧本医生与提示词生成器都读它。
  */
+const ACCEPT_EXT = [".docx", ".pdf", ".txt", ".md"];
+function isAcceptedScript(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return ACCEPT_EXT.some((ext) => name.endsWith(ext));
+}
+
 export function ProjectScripts({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const [scripts, setScripts] = useState<Script[] | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<{ title: string; episodes: Episode[]; scriptId: string } | null>(
     null
   );
@@ -58,6 +65,19 @@ export function ProjectScripts({ projectId, canWrite }: { projectId: string; can
     } finally {
       setUploading(false);
     }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    if (!canWrite || uploading) return;
+    const f = e.dataTransfer.files?.[0];
+    if (!f) return;
+    if (!isAcceptedScript(f)) {
+      toast.error("仅支持 .docx / .pdf / .txt / .md");
+      return;
+    }
+    void onUpload(f);
   }
 
   async function onDelete(s: Script) {
@@ -102,7 +122,28 @@ export function ProjectScripts({ projectId, canWrite }: { projectId: string; can
   }
 
   return (
-    <section className="space-y-3">
+    <section
+      className={`space-y-3 rounded-xl transition-colors ${
+        dragOver && canWrite ? "ring-2 ring-primary ring-offset-4 ring-offset-background" : ""
+      }`}
+      onDragOver={
+        canWrite
+          ? (e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={
+        canWrite
+          ? (e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return; // 进子元素不算离开
+              setDragOver(false);
+            }
+          : undefined
+      }
+      onDrop={canWrite ? onDrop : undefined}
+    >
       <div className="flex items-center justify-between">
         <h2 className="text-sm text-muted-foreground">项目剧本</h2>
         {canWrite && (
@@ -132,11 +173,21 @@ export function ProjectScripts({ projectId, canWrite }: { projectId: string; can
           <CardContent className="py-6 text-center text-sm text-muted-foreground">加载中…</CardContent>
         </Card>
       ) : scripts.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            {canWrite
-              ? "上传整部剧本（.docx/.pdf/.txt），自动按集拆分；剧本医生和提示词生成器都会用到"
-              : "项目还没有剧本，等导演上传"}
+        <Card className={dragOver && canWrite ? "border-primary bg-primary/5" : "border-dashed"}>
+          <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
+            {canWrite ? (
+              <>
+                <Upload className={`size-6 ${dragOver ? "text-primary" : "opacity-60"}`} />
+                <span>
+                  {dragOver ? "松手即上传" : "把剧本文件拖到这里，或点右上「上传剧本」"}
+                </span>
+                <span className="text-xs opacity-70">
+                  支持 .docx/.pdf/.txt/.md，自动按集拆分；剧本医生和提示词生成器都会用到
+                </span>
+              </>
+            ) : (
+              "项目还没有剧本，等导演上传"
+            )}
           </CardContent>
         </Card>
       ) : (
