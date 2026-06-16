@@ -13,6 +13,7 @@ import {
   Search,
   Upload,
   FileDown,
+  Check,
   Image as ImageIcon,
   Film,
 } from "lucide-react";
@@ -152,6 +153,7 @@ export function LiuguangFlowApp({
   const [category, setCategory] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const [inputIds, setInputIds] = useState<string[]>([]); // 本次喂给模型的图（改图/参考底图）
+  const [selectedIds, setSelectedIds] = useState<string[]>([]); // 网格多选（批量删除）
   const [preview, setPreview] = useState<Asset | null>(null);
   const [editPrompt, setEditPrompt] = useState(""); // 预览弹窗里的改图指令
   const [editing, setEditing] = useState(false);
@@ -159,7 +161,8 @@ export function LiuguangFlowApp({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importDim, setImportDim] = useState<"type" | "episode">("type");
+  const [importCat, setImportCat] = useState<string>("全部"); // 带入：分类（人物/场景…）
+  const [importEp, setImportEp] = useState<number | null>(null); // 带入：集筛选
   const [importQuery, setImportQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -268,7 +271,22 @@ export function LiuguangFlowApp({
     await fetch(`/api/image-studio/assets/${a.id}`, { method: "DELETE" });
     setAssets((arr) => arr.filter((x) => x.id !== a.id));
     setInputIds((r) => r.filter((x) => x !== a.id));
+    setSelectedIds((s) => s.filter((x) => x !== a.id));
     if (preview?.id === a.id) setPreview(null);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+  async function delMany() {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`删除所选 ${selectedIds.length} 张？`)) return;
+    const ids = [...selectedIds];
+    await Promise.all(ids.map((id) => fetch(`/api/image-studio/assets/${id}`, { method: "DELETE" })));
+    setAssets((arr) => arr.filter((x) => !ids.includes(x.id)));
+    setInputIds((r) => r.filter((x) => !ids.includes(x)));
+    setSelectedIds([]);
+    toast.success(`已删除 ${ids.length} 张`);
   }
 
   // 预览弹窗里改图：以当前图为底图，按指令重生成；保留同名 → 归入历史版本
@@ -305,23 +323,15 @@ export function LiuguangFlowApp({
     }
   }
 
-  // 带入分组
-  const importFiltered = assetPrompts.filter((p) => !importQuery.trim() || p.name.includes(importQuery.trim()));
-  const importGroups: { label: string; items: ImportItem[] }[] =
-    importDim === "type"
-      ? [...ASSET_MODES]
-          .map((k) => ({ label: k, items: importFiltered.filter((p) => p.kind === k) }))
-          .filter((g) => g.items.length > 0)
-      : (() => {
-          const eps = [...new Set(importFiltered.flatMap((p) => p.episodes))].sort((a, b) => a - b);
-          const groups = eps.map((e) => ({
-            label: e === 0 ? "前置资料" : `第 ${e} 集`,
-            items: importFiltered.filter((p) => p.episodes.includes(e)),
-          }));
-          const noEp = importFiltered.filter((p) => p.episodes.length === 0);
-          if (noEp.length) groups.push({ label: "未标集", items: noEp });
-          return groups;
-        })();
+  // 带入：分类 chip（人物/服装/道具/场景/群演）+ 集筛选 + 搜索 → 平铺列表
+  const importCats = ["全部", ...ASSET_MODES.filter((k) => assetPrompts.some((p) => p.kind === k))];
+  const importEpisodes = [...new Set(assetPrompts.flatMap((p) => p.episodes))].sort((a, b) => a - b);
+  const importList = assetPrompts.filter(
+    (p) =>
+      (importCat === "全部" || p.kind === importCat) &&
+      (importEp === null || p.episodes.includes(importEp)) &&
+      (!importQuery.trim() || p.name.includes(importQuery.trim()))
+  );
 
   return (
     <div className="flex h-[calc(100vh-8.5rem)] min-h-[600px] flex-col gap-3">
@@ -366,37 +376,68 @@ export function LiuguangFlowApp({
           ))}
         </aside>
 
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card/40 p-3">
-          {shown.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-              <ImageIcon className="size-8 opacity-40" />
-              <span>{assets.length === 0 ? "还没有媒体——在下方写提示词出图" : "该分类下没有媒体"}</span>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {shown.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => {
-                    setPreview(a);
-                    setEditPrompt("");
-                  }}
-                  className="group relative overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-primary/50"
-                  title={a.atName}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
-                  {inputIds.includes(a.id) && (
-                    <span className="absolute left-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">已选</span>
-                  )}
-                  {a.kind === "参考" && (
-                    <span className="absolute right-1 top-1 rounded-full bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground backdrop-blur">上传</span>
-                  )}
-                  <div className="truncate bg-background/80 px-1.5 py-1 text-left text-[10px]">{a.atName}</div>
-                </button>
-              ))}
+        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-card/40">
+          {/* 多选批量条 */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-3 border-b border-border px-3 py-1.5 text-sm">
+              <span className="text-primary">已选 {selectedIds.length} 张</span>
+              <button onClick={() => setSelectedIds(shown.map((a) => a.id))} className="text-xs text-muted-foreground hover:text-foreground">全选本页</button>
+              <button onClick={() => setSelectedIds([])} className="text-xs text-muted-foreground hover:text-foreground">取消</button>
+              <Button variant="destructive" size="sm" className="ml-auto h-7" onClick={delMany}>
+                <Trash2 className="size-3.5" /> 删除所选
+              </Button>
             </div>
           )}
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {shown.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <ImageIcon className="size-8 opacity-40" />
+                <span>{assets.length === 0 ? "还没有媒体——在下方写提示词出图" : "该分类下没有媒体"}</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {shown.map((a) => {
+                  const sel = selectedIds.includes(a.id);
+                  return (
+                    <div
+                      key={a.id}
+                      className={`group relative overflow-hidden rounded-lg border bg-card transition-colors ${
+                        sel
+                          ? "border-primary ring-2 ring-primary/40"
+                          : inputIds.includes(a.id)
+                            ? "border-primary/60"
+                            : "border-border hover:border-primary/50"
+                      }`}
+                      title={a.atName}
+                    >
+                      <button onClick={() => { setPreview(a); setEditPrompt(""); }} className="block w-full">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/assets/${a.filePath}`} alt={a.atName} className="aspect-square w-full object-cover" loading="lazy" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelected(a.id);
+                        }}
+                        title={sel ? "取消选择" : "选择"}
+                        className={`absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-full border-2 transition-all ${
+                          sel
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-white/80 bg-black/30 text-transparent opacity-0 group-hover:opacity-100"
+                        }`}
+                      >
+                        <Check className="size-3" />
+                      </button>
+                      {a.kind === "参考" && (
+                        <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-full bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground backdrop-blur">上传</span>
+                      )}
+                      <div className="pointer-events-none truncate bg-background/80 px-1.5 py-1 text-left text-[10px]">{a.atName}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -433,46 +474,74 @@ export function LiuguangFlowApp({
                 <FileDown className="size-4 text-primary" />
                 <span>
                   从提示词生成器带入
-                  <span className="block text-[10px] text-muted-foreground">按类型/集数（{assetPrompts.length}）</span>
+                  <span className="block text-[10px] text-muted-foreground">按分类/集找（{assetPrompts.length}）</span>
                 </span>
               </button>
             </div>
           </>
         )}
 
-        {/* 带入面板 */}
+        {/* 带入面板：分类 chip + 集筛选 + 搜索 + 平铺列表 */}
         {importOpen && (
           <>
             <div className="fixed inset-0 z-20" onClick={() => setImportOpen(false)} />
-            <div className="absolute bottom-full left-0 z-30 mb-2 w-72 space-y-1.5 rounded-xl border border-border bg-card p-2 shadow-xl">
-              <div className="flex items-center gap-1">
-                <button onClick={() => setImportDim("type")} className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "type" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>按类型</button>
-                <button onClick={() => setImportDim("episode")} className={`rounded-full border px-2 py-0.5 text-[10px] ${importDim === "episode" ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>按集</button>
-                <Input value={importQuery} onChange={(e) => setImportQuery(e.target.value)} placeholder="搜名字" className="h-6 flex-1 text-[11px]" />
+            <div className="absolute bottom-full left-0 z-30 mb-2 w-80 space-y-2 rounded-xl border border-border bg-card p-2 shadow-xl">
+              <div className="text-[11px] font-medium text-muted-foreground">从提示词生成器带入资产</div>
+              {/* 分类（用户最能区分） */}
+              <div className="flex flex-wrap gap-1">
+                {importCats.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setImportCat(c)}
+                    className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                      importCat === c ? "border-primary/60 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {c}
+                    {c !== "全部" && <span className="ml-1 opacity-60">{assetPrompts.filter((p) => p.kind === c).length}</span>}
+                  </button>
+                ))}
               </div>
-              <div className="max-h-60 space-y-1.5 overflow-y-auto">
-                {importGroups.length === 0 ? (
-                  <p className="py-3 text-center text-[11px] text-muted-foreground">没有匹配的资产</p>
+              {/* 搜索 + 集筛选 */}
+              <div className="flex items-center gap-1.5">
+                <Input value={importQuery} onChange={(e) => setImportQuery(e.target.value)} placeholder="搜名字" className="h-7 flex-1 text-xs" />
+                {importEpisodes.length > 0 && (
+                  <select
+                    value={importEp ?? ""}
+                    onChange={(e) => setImportEp(e.target.value === "" ? null : Number(e.target.value))}
+                    className="h-7 rounded-md border border-border bg-card px-1.5 text-xs text-muted-foreground"
+                  >
+                    <option value="">全部集</option>
+                    {importEpisodes.map((e) => (
+                      <option key={e} value={e}>
+                        {e === 0 ? "前置资料" : `第${e}集`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {/* 列表 */}
+              <div className="max-h-64 space-y-0.5 overflow-y-auto">
+                {importList.length === 0 ? (
+                  <p className="py-4 text-center text-[11px] text-muted-foreground">没有匹配的资产</p>
                 ) : (
-                  importGroups.map((g) => (
-                    <div key={g.label}>
-                      <div className="px-1 text-[10px] font-medium text-muted-foreground">{g.label}（{g.items.length}）</div>
-                      {g.items.map((a) => (
-                        <button
-                          key={`${g.label}-${a.name}`}
-                          onClick={() => {
-                            setPrompt(a.promptText);
-                            if (!atName) setAtName(a.name);
-                            if ((ASSET_MODES as readonly string[]).includes(a.kind)) setKind(a.kind);
-                            setImportOpen(false);
-                          }}
-                          className="block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-secondary"
-                          title={a.promptText}
-                        >
-                          {a.name}
-                        </button>
-                      ))}
-                    </div>
+                  importList.map((a) => (
+                    <button
+                      key={`${a.kind}-${a.name}`}
+                      onClick={() => {
+                        setPrompt(a.promptText);
+                        if (!atName) setAtName(a.name);
+                        if ((ASSET_MODES as readonly string[]).includes(a.kind)) setKind(a.kind);
+                        setImportOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-secondary"
+                      title={a.promptText}
+                    >
+                      <span className="truncate text-xs">{a.name}</span>
+                      {importCat === "全部" && (
+                        <span className="ml-auto shrink-0 rounded border border-border px-1 text-[9px] text-muted-foreground">{a.kind}</span>
+                      )}
+                    </button>
                   ))
                 )}
               </div>
